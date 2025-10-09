@@ -1,0 +1,14 @@
+when:
+  event:
+    - push
+    - pull_request
+    - manual
+
+steps:
+  test:
+    image: golang:1.25.1
+    commands:
+      - go mod download
+      - go test -v -race -coverprofile=coverage.out -covermode=atomic
+      - go vet ./...
+      - go build -o or-analytics main.go
