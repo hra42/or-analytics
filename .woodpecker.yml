@@ -14,7 +14,7 @@ steps:
       - go build -o or-analytics .
 
   upload-to-s3:
-    image: plugins/s3
+    image: woodpeckerci/plugin-s3
     settings:
       bucket:
         from_secret: s3_bucket
