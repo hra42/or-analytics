@@ -9,6 +9,6 @@ steps:
     image: golang:1.25.1
     commands:
       - go mod download
-      - go test -v -race -coverprofile=coverage.out -covermode=atomic
+      - go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
       - go vet ./...
-      - go build -o or-analytics main.go
+      - go build -o or-analytics .
