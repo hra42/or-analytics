@@ -11,7 +11,16 @@ steps:
       - go mod download
       - go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
       - go vet ./...
-      - go build -o or-analytics .
+
+  build-amd64:
+    image: golang:1.25.1
+    commands:
+      - GOOS=linux GOARCH=amd64 go build -o or-analytics-amd64 .
+
+  build-arm64:
+    image: golang:1.25.1
+    commands:
+      - GOOS=linux GOARCH=arm64 go build -o or-analytics-arm64 .
 
   upload-to-s3:
     image: woodpeckerci/plugin-s3
@@ -27,8 +36,8 @@ steps:
       endpoint:
         from_secret: s3_endpoint
       path_style: true
-      source: or-analytics
-      target: /builds/${CI_COMMIT_SHA}/or-analytics
+      source: or-analytics-*
+      target: /builds/${CI_COMMIT_SHA}/
     when:
       event:
         - push
