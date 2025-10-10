@@ -15,12 +15,14 @@ steps:
   build-amd64:
     image: golang:1.25.1
     commands:
-      - GOOS=linux GOARCH=amd64 go build -o or-analytics-amd64 .
+      - apt-get update && apt-get install -y gcc
+      - CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o or-analytics-amd64 .
 
   build-arm64:
     image: golang:1.25.1
     commands:
-      - GOOS=linux GOARCH=arm64 go build -o or-analytics-arm64 .
+      - apt-get update && apt-get install -y gcc-aarch64-linux-gnu
+      - CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc go build -o or-analytics-arm64 .
 
   upload-to-s3:
     image: woodpeckerci/plugin-s3
