@@ -176,3 +176,14 @@ func GetSummary(db *sql.DB) (*Summary, error) {
 
 	return &summary, nil
 }
+
+// ExportToParquet exports all activity data to a Parquet file
+func ExportToParquet(db *sql.DB, outputPath string) error {
+	// Use DuckDB's COPY command to export to Parquet
+	query := fmt.Sprintf("COPY activity TO '%s' (FORMAT PARQUET)", outputPath)
+	_, err := db.Exec(query)
+	if err != nil {
+		return fmt.Errorf("failed to export to parquet: %w", err)
+	}
+	return nil
+}
