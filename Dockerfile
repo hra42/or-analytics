@@ -2,8 +2,8 @@
 # Stage 1: Build the Go application
 FROM golang:1.25.1-alpine AS builder
 
-# Install build dependencies (gcc, musl-dev for CGO)
-RUN apk add --no-cache gcc musl-dev
+# Install build dependencies (gcc, g++, musl-dev for CGO and DuckDB)
+RUN apk add --no-cache gcc g++ musl-dev
 
 # Set working directory
 WORKDIR /build
@@ -28,9 +28,11 @@ RUN CGO_ENABLED=1 go build \
 FROM alpine:latest
 
 # Install runtime dependencies
+# libstdc++ is required for DuckDB at runtime
 RUN apk add --no-cache \
     ca-certificates \
-    tzdata
+    tzdata \
+    libstdc++
 
 # Create non-root user
 RUN addgroup -g 1000 analytics && \
