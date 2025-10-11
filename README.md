@@ -27,7 +27,7 @@ OR Analytics is a lightweight tool that fetches activity data from OpenRouter's 
   - Create one at: https://openrouter.ai/settings/provisioning-keys
 
 **For Native Installation:**
-- Go 1.21 or higher
+- Go 1.25.1 or higher
 - OpenRouter provisioning key (not a regular API key!)
   - Create one at: https://openrouter.ai/settings/provisioning-keys
 - DuckDB CLI (optional, for running queries)
@@ -629,10 +629,6 @@ Make sure only one instance is writing to the database at a time.
 - These services typically don't require `-s3-path-style`
 - Ensure you're using the correct regional endpoint
 - Credentials should be configured the same way as AWS S3
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
