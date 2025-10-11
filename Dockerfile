@@ -28,7 +28,8 @@ RUN CGO_ENABLED=1 go build \
     -o or-analytics
 
 # Stage 2: Create minimal runtime image
-FROM debian:bookworm-slim
+# Using trixie for glibc 2.38+ required by DuckDB
+FROM debian:trixie-slim
 
 # Install runtime dependencies
 # libstdc++6 is required for DuckDB at runtime

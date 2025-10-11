@@ -264,11 +264,11 @@ The project uses a **multi-stage build** for optimal image size and security:
 - **Note**: Uses Debian instead of Alpine to avoid DuckDB compilation issues
 
 **Stage 2: Runtime**
-- Based on `debian:bookworm-slim` (minimal footprint)
+- Based on `debian:trixie-slim` (minimal footprint)
 - Includes ca-certificates, tzdata, and libstdc++6
 - Runs as non-root user (analytics:1000)
 - Database stored in `/app/data` for volume mounting
-- **Note**: Debian is required for DuckDB compatibility (Alpine has linking issues)
+- **Note**: Debian Trixie is required for glibc 2.38+ which DuckDB needs at runtime
 
 ### Docker Compose Profiles
 Service configurations available:
