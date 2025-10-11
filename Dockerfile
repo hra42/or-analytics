@@ -1,9 +1,12 @@
 # Multi-stage build for OR Analytics
 # Stage 1: Build the Go application
-FROM golang:1.25.1-alpine AS builder
+FROM golang:1.25.1 AS builder
 
-# Install build dependencies (gcc, g++, musl-dev for CGO and DuckDB)
-RUN apk add --no-cache gcc g++ musl-dev
+ENV GOPROXY=https://go.hra42.com
+ENV GOSUMDB=sum.golang.org
+
+# Install build dependencies (gcc for CGO and DuckDB)
+RUN apt-get update && apt-get install -y gcc && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /build
@@ -25,18 +28,20 @@ RUN CGO_ENABLED=1 go build \
     -o or-analytics
 
 # Stage 2: Create minimal runtime image
-FROM alpine:latest
+FROM debian:bookworm-slim
 
 # Install runtime dependencies
-# libstdc++ is required for DuckDB at runtime
-RUN apk add --no-cache \
+# libstdc++6 is required for DuckDB at runtime
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
     ca-certificates \
     tzdata \
-    libstdc++
+    libstdc++6 && \
+    rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN addgroup -g 1000 analytics && \
-    adduser -D -u 1000 -G analytics analytics
+RUN groupadd -g 1000 analytics && \
+    useradd -r -u 1000 -g analytics analytics
 
 # Set working directory
 WORKDIR /app
