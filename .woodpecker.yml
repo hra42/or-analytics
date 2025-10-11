@@ -23,6 +23,10 @@ steps:
     commands:
       - apt-get update && apt-get install -y gcc
       - CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -trimpath -o or-analytics-amd64 .
+    when:
+      event:
+        exclude:
+          - pull_request
 
   build-arm64:
     image: registry.hra42.com/golang:1.25.1
@@ -32,6 +36,10 @@ steps:
     commands:
       - apt-get update && apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
       - CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc CXX=aarch64-linux-gnu-g++ go build -ldflags="-s -w" -trimpath -o or-analytics-arm64 .
+    when:
+      event:
+        exclude:
+          - pull_request
 
   upload-to-s3:
     image: woodpeckerci/plugin-s3
@@ -55,22 +63,6 @@ steps:
         - manual
       branch:
         - main
-
-  # Build Docker image
-  docker-build:
-    image: woodpeckerci/plugin-docker-buildx
-    settings:
-      repo: or-analytics
-      dockerfile: Dockerfile
-      platforms: linux/amd64,linux/arm64
-      tags:
-        - ${CI_COMMIT_SHA:0:8}
-        - latest
-      dry_run: true
-    when:
-      event:
-        - pull_request
-        - manual
 
   # Build and push Docker image (main branch)
   docker-build-push-main:
@@ -103,22 +95,26 @@ steps:
         - tag
 
   webhook-notification:
-    image: plugins/webhook
-    settings:
-      urls:
-        from_secret: webhook_url
-      content_type: application/json
-      template: |
+    image: curlimages/curl:latest
+    commands:
+      - |
+        curl -X POST "$WEBHOOK_URL" \
+          -H "Content-Type: application/json" \
+          -d @- <<EOF
         {
-          "repo": "{{ repo.full_name }}",
-          "commit": "{{ build.commit }}",
-          "branch": "{{ build.branch }}",
-          "status": "{{ build.status }}",
-          "event": "{{ build.event }}",
-          "author": "{{ build.author }}",
-          "message": "{{ build.message }}",
-          "link": "{{ build.link }}",
-          "started": {{ build.started }},
-          "finished": {{ build.finished }},
-          "tag": "{{ build.tag }}"
+          "repo": "${CI_REPO}",
+          "commit": "${CI_COMMIT_SHA}",
+          "branch": "${CI_COMMIT_BRANCH}",
+          "status": "${CI_PIPELINE_STATUS}",
+          "event": "${CI_PIPELINE_EVENT}",
+          "author": "${CI_COMMIT_AUTHOR}",
+          "message": $(echo "$CI_COMMIT_MESSAGE" | jq -Rs .),
+          "link": "${CI_PIPELINE_URL}",
+          "started": ${CI_PIPELINE_STARTED},
+          "finished": ${CI_PIPELINE_FINISHED},
+          "tag": "${CI_COMMIT_TAG}"
         }
+        EOF
+    environment:
+      - WEBHOOK_URL:
+          from_secret: webhook_url
