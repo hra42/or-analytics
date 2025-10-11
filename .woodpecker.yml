@@ -116,5 +116,5 @@ steps:
         }
         EOF
     environment:
-      - WEBHOOK_URL:
-          from_secret: webhook_url
+      WEBHOOK_URL:
+        from_secret: webhook_url
