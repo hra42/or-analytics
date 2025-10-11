@@ -80,8 +80,6 @@ steps:
       dockerfile: Dockerfile
       platforms: linux/amd64,linux/arm64
       tags:
-        - ${CI_COMMIT_SHA:0:8}
-        - ${CI_COMMIT_BRANCH}
         - latest
     when:
       event:
@@ -103,7 +101,6 @@ steps:
     when:
       event:
         - tag
-        - manual
 
   discord-notification:
     image: appleboy/drone-discord
