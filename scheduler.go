@@ -136,14 +136,14 @@ func RunScheduler(ctx context.Context, config *SchedulerConfig) error {
 		return fmt.Errorf("failed to create job: %w", err)
 	}
 
-	// Log next run time
+	// Start the scheduler
+	s.Start()
+
+	// Log next run time (must be after Start())
 	nextRun, err := job.NextRun()
 	if err == nil {
 		log.Printf("Next scheduled run: %s", nextRun.Format(time.RFC3339))
 	}
-
-	// Start the scheduler
-	s.Start()
 
 	log.Println("Scheduler started. Press Ctrl+C to stop.")
 
