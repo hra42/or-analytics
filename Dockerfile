@@ -1,6 +1,6 @@
 # Multi-stage build for OR Analytics
 # Stage 1: Build the Go application
-FROM golang:1.25.1 AS builder
+FROM registry.hra42.com/golang:1.25.1 AS builder
 
 ENV GOPROXY=https://go.hra42.com
 ENV GOSUMDB=sum.golang.org
