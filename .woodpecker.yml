@@ -49,6 +49,7 @@ steps:
   # Build Docker image
   docker-build:
     image: woodpeckerci/plugin-docker-buildx
+    privileged: true
     settings:
       repo: or-analytics
       dockerfile: Dockerfile
@@ -64,6 +65,7 @@ steps:
   # Build and push Docker image (main branch)
   docker-build-push-main:
     image: woodpeckerci/plugin-docker-buildx
+    privileged: true
     settings:
       registry:
         from_secret: docker_registry
@@ -88,6 +90,7 @@ steps:
   # Build and push Docker image (tagged releases)
   docker-build-push-tag:
     image: woodpeckerci/plugin-docker-buildx
+    privileged: true
     settings:
       registry:
         from_secret: docker_registry
