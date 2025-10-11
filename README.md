@@ -14,16 +14,56 @@ OR Analytics is a lightweight tool that fetches activity data from OpenRouter's 
 - 📈 Built-in summary statistics
 - 🔄 Upsert logic to prevent duplicates
 - 📝 Example SQL queries for common analyses
+- 📦 Export data to Parquet format (local or S3)
+- ☁️ Direct S3 upload support (AWS S3, MinIO, DigitalOcean Spaces, Cloudflare R2, etc.)
+- 🐳 Docker support with optimized multi-stage builds
 - ⚡ Fast and lightweight
 
 ## Prerequisites
 
+**For Docker (Recommended):**
+- Docker and Docker Compose
+- OpenRouter provisioning key (not a regular API key!)
+  - Create one at: https://openrouter.ai/settings/provisioning-keys
+
+**For Native Installation:**
 - Go 1.21 or higher
 - OpenRouter provisioning key (not a regular API key!)
   - Create one at: https://openrouter.ai/settings/provisioning-keys
 - DuckDB CLI (optional, for running queries)
 
+**Optional (for S3 export):**
+- AWS credentials (or compatible service credentials)
+  - Configure via `~/.aws/credentials` or environment variables
+  - Required environment variables: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`
+
 ## Installation
+
+### Quick Start with Docker (Recommended)
+
+The fastest way to get started:
+
+```bash
+# Clone the repository
+git clone https://github.com/hra42/or-analytics.git
+cd or-analytics
+
+# Set up environment
+cp .env.example .env
+# Edit .env and add your OPENROUTER_API_KEY
+
+# Create data directory
+mkdir -p data
+
+# Run with Docker Compose
+docker-compose run --rm or-analytics
+```
+
+That's it! Your analytics data is now in `./data/analytics.db`.
+
+### Native Installation
+
+For development or if you prefer running natively:
 
 1. Clone the repository:
 ```bash
@@ -64,9 +104,30 @@ go run main.go -db /path/to/custom.db
 # Enable verbose logging
 go run main.go -verbose
 
+# Export data to local Parquet file
+go run main.go -export activity.parquet
+
+# Export data directly to AWS S3
+go run main.go -export s3://my-bucket/analytics/activity.parquet
+
+# Export to S3-compatible service (MinIO)
+go run main.go -export s3://my-bucket/data.parquet \
+  -s3-endpoint https://minio.example.com:9000 \
+  -s3-path-style
+
 # Combine options
-go run main.go -date 2025-10-08 -db custom.db -verbose
+go run main.go -date 2025-10-08 -db custom.db -verbose -export s3://my-bucket/data.parquet
 ```
+
+**Available Flags:**
+- `-date` - Filter by specific date (YYYY-MM-DD format)
+- `-db` - Path to DuckDB database file (default: analytics.db)
+- `-verbose` - Enable verbose logging
+- `-export` - Export data to Parquet file (local path or s3:// URI)
+- `-s3-endpoint` - Custom S3 endpoint URL for S3-compatible services
+- `-s3-path-style` - Use path-style S3 URLs (required for MinIO and some providers)
+- `-schedule` - Run as a scheduler with specified schedule (daily, hourly, now, or cron expression)
+- `-timezone` - Timezone for scheduler (default: UTC)
 
 ### Example Output
 
@@ -148,6 +209,71 @@ See [queries/README.md](queries/README.md) for more details.
 
 ### Exporting Data
 
+You can export your data in multiple formats:
+
+#### Using the built-in export flag (recommended)
+
+**Local Parquet files:**
+```bash
+# Export to local Parquet file during import
+go run main.go -export activity.parquet
+
+# Export specific date range
+go run main.go -date 2025-10-08 -export oct08_activity.parquet
+```
+
+**Direct S3 upload:**
+```bash
+# Export directly to AWS S3 (requires AWS credentials)
+go run main.go -export s3://my-bucket/analytics/activity.parquet
+
+# Export to S3 with date in filename
+go run main.go -export s3://my-bucket/analytics/$(date +%Y-%m-%d).parquet
+
+# Export specific date to S3
+go run main.go -date 2025-10-08 -export s3://my-bucket/daily/2025-10-08.parquet
+```
+
+**S3-Compatible Providers (MinIO, DigitalOcean Spaces, Cloudflare R2, etc.):**
+```bash
+# MinIO
+go run main.go -export s3://my-bucket/data.parquet \
+  -s3-endpoint https://minio.example.com:9000 \
+  -s3-path-style
+
+# DigitalOcean Spaces
+go run main.go -export s3://my-space/analytics/data.parquet \
+  -s3-endpoint https://nyc3.digitaloceanspaces.com
+
+# Cloudflare R2
+go run main.go -export s3://my-bucket/data.parquet \
+  -s3-endpoint https://[account-id].r2.cloudflarestorage.com
+
+# Backblaze B2
+go run main.go -export s3://my-bucket/data.parquet \
+  -s3-endpoint https://s3.us-west-001.backblazeb2.com
+
+# Wasabi
+go run main.go -export s3://my-bucket/data.parquet \
+  -s3-endpoint https://s3.wasabisys.com
+```
+
+**AWS Credentials Setup:**
+```bash
+# Option 1: Environment variables
+export AWS_ACCESS_KEY_ID=your_access_key
+export AWS_SECRET_ACCESS_KEY=your_secret_key
+export AWS_REGION=us-east-1
+
+# Option 2: AWS credentials file (~/.aws/credentials)
+[default]
+aws_access_key_id = your_access_key
+aws_secret_access_key = your_secret_key
+region = us-east-1
+```
+
+#### Using DuckDB CLI
+
 Export to CSV:
 ```bash
 duckdb analytics.db "COPY (SELECT * FROM activity) TO 'export.csv' (HEADER, DELIMITER ',');"
@@ -158,18 +284,110 @@ Export to Parquet:
 duckdb analytics.db "COPY (SELECT * FROM activity) TO 'export.parquet' (FORMAT PARQUET);"
 ```
 
-## Automation
+Export filtered data:
+```bash
+duckdb analytics.db "COPY (SELECT * FROM activity WHERE date >= '2025-10-01') TO 'october.parquet' (FORMAT PARQUET);"
+```
 
-Run the tool periodically to keep your database up to date:
+## Scheduler (Built-in)
+
+The application includes a built-in scheduler that eliminates the need for external cron jobs. The scheduler runs continuously and executes imports on a defined schedule.
+
+### Usage
+
+**Daily at midnight (default):**
+```bash
+# Run scheduler
+go run main.go -schedule daily
+
+# With export to S3
+go run main.go -schedule daily -export s3://my-bucket/analytics.parquet
+
+# With custom timezone
+go run main.go -schedule daily -timezone America/New_York
+```
+
+**Hourly:**
+```bash
+go run main.go -schedule hourly -verbose
+```
+
+**Custom cron expression:**
+```bash
+# Every day at 2 AM
+go run main.go -schedule "0 2 * * *"
+
+# Every 6 hours
+go run main.go -schedule "0 */6 * * *"
+
+# Monday-Friday at 9 AM
+go run main.go -schedule "0 9 * * 1-5"
+```
+
+**Run now and schedule:**
+```bash
+# Run immediately, then daily at midnight
+go run main.go -schedule now
+```
+
+### Docker Scheduler
+
+Run the scheduler as a long-running container:
+
+```bash
+# Basic scheduler (daily at midnight UTC)
+docker-compose --profile scheduler up -d or-analytics-scheduler
+
+# With S3 export
+docker-compose --profile scheduler-s3 up -d or-analytics-scheduler-s3
+
+# View logs
+docker-compose logs -f or-analytics-scheduler
+
+# Stop scheduler
+docker-compose stop or-analytics-scheduler
+```
+
+### Scheduler Benefits
+
+- ✅ **No external dependencies**: No need for cron, systemd timers, or Kubernetes CronJobs
+- ✅ **Timezone support**: Run schedules in any timezone
+- ✅ **Flexible scheduling**: Daily, hourly, or custom cron expressions
+- ✅ **Self-contained**: Everything runs in one process
+- ✅ **Docker-friendly**: Runs as a long-running container with restart policies
+- ✅ **Graceful shutdown**: Handles SIGTERM and SIGINT properly
+
+## Automation (External Cron)
+
+Alternatively, you can use external scheduling tools to run the tool periodically:
 
 ### Using cron (Linux/macOS)
 
+**Basic daily import:**
 ```bash
 # Edit crontab
 crontab -e
 
 # Add entry to run daily at 2 AM
 0 2 * * * cd /path/to/or-analytics && /usr/local/go/bin/go run main.go >> logs/import.log 2>&1
+```
+
+**Daily import with S3 backup:**
+```bash
+# Edit crontab
+crontab -e
+
+# Run daily at 2 AM and upload to S3
+0 2 * * * cd /path/to/or-analytics && /usr/local/go/bin/go run main.go -export s3://my-bucket/backups/$(date +\%Y-\%m-\%d).parquet >> logs/import.log 2>&1
+```
+
+**With Docker:**
+```bash
+# Edit crontab
+crontab -e
+
+# Run daily at 2 AM using Docker
+0 2 * * * cd /path/to/or-analytics && docker-compose run --rm or-analytics -export s3://my-bucket/backups/analytics-$(date +\%Y-\%m-\%d).parquet >> logs/import.log 2>&1
 ```
 
 ### Using systemd timer (Linux)
@@ -205,6 +423,55 @@ sudo systemctl enable or-analytics.timer
 sudo systemctl start or-analytics.timer
 ```
 
+### Using Kubernetes CronJob
+
+For Kubernetes deployments:
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: or-analytics
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: or-analytics
+            image: or-analytics:latest
+            env:
+            - name: OPENROUTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: or-analytics-secrets
+                  key: openrouter-api-key
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: access-key-id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: secret-access-key
+            - name: AWS_REGION
+              value: "us-east-1"
+            args:
+            - "-export"
+            - "s3://my-bucket/analytics/data.parquet"
+            volumeMounts:
+            - name: data
+              mountPath: /app/data
+          restartPolicy: OnFailure
+          volumes:
+          - name: data
+            persistentVolumeClaim:
+              claimName: or-analytics-data
+```
+
 ## Testing
 
 Run the test suite:
@@ -231,13 +498,78 @@ The project includes comprehensive unit tests covering:
 
 ## Building
 
+### Native Binary
+
 Build a standalone binary:
 
 ```bash
-go build -o or-analytics main.go
+go build -o or-analytics
 
 # Run the binary
 ./or-analytics
+```
+
+### Docker
+
+Build and run with Docker:
+
+```bash
+# Build the Docker image
+docker build -t or-analytics .
+
+# Run with Docker
+docker run --rm \
+  -e OPENROUTER_API_KEY=your_key_here \
+  -v $(pwd)/data:/app/data \
+  or-analytics
+
+# Run with specific options
+docker run --rm \
+  -e OPENROUTER_API_KEY=your_key_here \
+  -v $(pwd)/data:/app/data \
+  or-analytics -date 2025-10-08 -verbose
+```
+
+### Docker Compose
+
+The easiest way to run with Docker:
+
+```bash
+# Copy environment file
+cp .env.example .env
+# Edit .env and add your OPENROUTER_API_KEY
+
+# Run once
+docker-compose run --rm or-analytics
+
+# Run with custom options
+docker-compose run --rm or-analytics -date 2025-10-08 -verbose
+
+# Export to S3
+docker-compose run --rm or-analytics \
+  -export s3://my-bucket/analytics.parquet
+
+# Export to MinIO (uses profile)
+docker-compose run --rm or-analytics-minio
+```
+
+**Docker Compose Profiles:**
+- Default: Basic import without export
+- `scheduled`: Automated S3 backup
+- `minio`: Export to MinIO-compatible storage
+
+```bash
+# Create data directory for persistence
+mkdir -p data
+
+# Run default service
+docker-compose run --rm or-analytics
+
+# Run with scheduled profile
+docker-compose --profile scheduled run --rm or-analytics-scheduled
+
+# Run with MinIO profile
+docker-compose --profile minio run --rm or-analytics-minio
 ```
 
 ## Common Use Cases
@@ -272,6 +604,32 @@ This is normal for new accounts or if you haven't used the API in the last 30 da
 ### Database locked errors
 Make sure only one instance is writing to the database at a time.
 
+### S3 export errors
+
+**"failed to load AWS config"**
+- Ensure AWS credentials are configured via `~/.aws/credentials` or environment variables
+- Check that `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION` are set
+
+**"invalid S3 URI"**
+- S3 URIs must be in the format `s3://bucket-name/path/to/file.parquet`
+- Ensure the bucket name and key are separated by a `/`
+
+**"failed to upload to S3: AccessDenied"**
+- Verify your AWS credentials have write permissions to the S3 bucket
+- Check the bucket policy and IAM permissions
+
+### S3-compatible service connection issues
+
+**MinIO connection problems:**
+- Always use `-s3-path-style` flag with MinIO
+- Ensure the endpoint URL includes the protocol (https:// or http://)
+- Example: `-s3-endpoint https://minio.example.com:9000 -s3-path-style`
+
+**DigitalOcean Spaces / Cloudflare R2:**
+- These services typically don't require `-s3-path-style`
+- Ensure you're using the correct regional endpoint
+- Credentials should be configured the same way as AWS S3
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
@@ -289,6 +647,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Related Projects
 
 - [openrouter-go](https://github.com/hra42/openrouter-go) - Go client for OpenRouter API
+
+## Development
+
+For developers working on this project, see [CLAUDE.md](CLAUDE.md) for development guidelines, architecture overview, and common tasks.
 
 ## Support
 

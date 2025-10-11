@@ -324,3 +324,92 @@ func TestGetSummary_WithData(t *testing.T) {
 		t.Errorf("Expected 225.0 total reasoning tokens, got %f", summary.TotalReasoningTokens)
 	}
 }
+
+func TestExportToParquet(t *testing.T) {
+	dbPath := "test_export.db"
+	parquetPath := "test_export.parquet"
+	defer os.Remove(dbPath)
+	defer os.Remove(parquetPath)
+
+	db, err := InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("InitDB failed: %v", err)
+	}
+	defer db.Close()
+
+	// Insert test data
+	records := []ActivityRecord{
+		{
+			Date:             "2025-10-01",
+			Model:            "model1",
+			ProviderName:     "provider1",
+			Requests:         10.0,
+			Usage:            0.5,
+			PromptTokens:     1000.0,
+			CompletionTokens: 500.0,
+			ReasoningTokens:  100.0,
+		},
+		{
+			Date:             "2025-10-02",
+			Model:            "model2",
+			ProviderName:     "provider2",
+			Requests:         5.0,
+			Usage:            0.3,
+			PromptTokens:     800.0,
+			CompletionTokens: 400.0,
+			ReasoningTokens:  50.0,
+		},
+	}
+
+	_, err = InsertActivityRecords(db, records)
+	if err != nil {
+		t.Fatalf("InsertActivityRecords failed: %v", err)
+	}
+
+	// Export to Parquet
+	err = ExportToParquet(db, parquetPath)
+	if err != nil {
+		t.Fatalf("ExportToParquet failed: %v", err)
+	}
+
+	// Verify file was created
+	if _, err := os.Stat(parquetPath); os.IsNotExist(err) {
+		t.Errorf("Parquet file was not created at %s", parquetPath)
+	}
+
+	// Verify we can read it back with DuckDB
+	var count int
+	query := "SELECT COUNT(*) FROM read_parquet('" + parquetPath + "')"
+	err = db.QueryRow(query).Scan(&count)
+	if err != nil {
+		t.Fatalf("Failed to read parquet file: %v", err)
+	}
+
+	if count != 2 {
+		t.Errorf("Expected 2 records in parquet file, got %d", count)
+	}
+}
+
+func TestExportToParquet_EmptyTable(t *testing.T) {
+	dbPath := "test_export_empty.db"
+	parquetPath := "test_export_empty.parquet"
+	defer os.Remove(dbPath)
+	defer os.Remove(parquetPath)
+
+	db, err := InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("InitDB failed: %v", err)
+	}
+	defer db.Close()
+
+	// Export empty table
+	err = ExportToParquet(db, parquetPath)
+	if err != nil {
+		t.Fatalf("ExportToParquet failed on empty table: %v", err)
+	}
+
+	// Verify file was created
+	if _, err := os.Stat(parquetPath); os.IsNotExist(err) {
+		t.Errorf("Parquet file was not created at %s", parquetPath)
+	}
+}

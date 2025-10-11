@@ -46,6 +46,66 @@ steps:
       branch:
         - main
 
+  # Build Docker image
+  docker-build:
+    image: woodpeckerci/plugin-docker-buildx
+    settings:
+      repo: or-analytics
+      dockerfile: Dockerfile
+      platforms: linux/amd64,linux/arm64
+      tags:
+        - ${CI_COMMIT_SHA:0:8}
+        - latest
+      dry_run: true
+    when:
+      event:
+        - pull_request
+
+  # Build and push Docker image (main branch)
+  docker-build-push-main:
+    image: woodpeckerci/plugin-docker-buildx
+    settings:
+      registry:
+        from_secret: docker_registry
+      repo:
+        from_secret: docker_repo
+      username:
+        from_secret: docker_username
+      password:
+        from_secret: docker_password
+      dockerfile: Dockerfile
+      platforms: linux/amd64,linux/arm64
+      tags:
+        - ${CI_COMMIT_SHA:0:8}
+        - ${CI_COMMIT_BRANCH}
+        - latest
+    when:
+      event:
+        - push
+      branch:
+        - main
+
+  # Build and push Docker image (tagged releases)
+  docker-build-push-tag:
+    image: woodpeckerci/plugin-docker-buildx
+    settings:
+      registry:
+        from_secret: docker_registry
+      repo:
+        from_secret: docker_repo
+      username:
+        from_secret: docker_username
+      password:
+        from_secret: docker_password
+      dockerfile: Dockerfile
+      platforms: linux/amd64,linux/arm64
+      tags:
+        - ${CI_COMMIT_TAG}
+        - latest
+    when:
+      event:
+        - tag
+
   discord-notification:
     image: appleboy/drone-discord
     settings:
