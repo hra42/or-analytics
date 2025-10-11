@@ -43,6 +43,7 @@ steps:
     when:
       event:
         - push
+        - manual
       branch:
         - main
 
@@ -60,6 +61,7 @@ steps:
     when:
       event:
         - pull_request
+        - manual
 
   # Build and push Docker image (main branch)
   docker-build-push-main:
@@ -78,6 +80,7 @@ steps:
     when:
       event:
         - push
+        - manual
       branch:
         - main
 
@@ -97,6 +100,7 @@ steps:
     when:
       event:
         - tag
+        - manual
 
   discord-notification:
     image: appleboy/drone-discord

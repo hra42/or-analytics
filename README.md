@@ -572,6 +572,41 @@ docker-compose --profile scheduled run --rm or-analytics-scheduled
 docker-compose --profile minio run --rm or-analytics-minio
 ```
 
+## CI/CD
+
+The project uses Woodpecker CI for automated testing, building, and deployment.
+
+### Pipeline Triggers
+
+The pipeline runs automatically on:
+- **Push to main**: Runs tests, builds binaries, uploads to S3, builds and pushes Docker images
+- **Pull requests**: Runs tests and dry-run Docker builds
+- **Tags**: Builds and pushes Docker images with version tags
+- **Manual triggers**: All steps can be triggered manually from the Woodpecker UI
+
+### Automated Steps
+
+1. **Testing**: Runs Go tests with race detection and coverage
+2. **Binary Builds**: Builds for linux/amd64 and linux/arm64
+3. **S3 Upload**: Uploads binaries to S3 (main branch and manual triggers)
+4. **Docker Images**: Builds multi-platform Docker images (linux/amd64, linux/arm64)
+5. **Notifications**: Sends Discord notifications on completion
+
+### Required Secrets
+
+Configure these secrets in Woodpecker:
+- `s3_bucket`: S3 bucket name for binary uploads
+- `s3_access_key`: S3 access key
+- `s3_secret_key`: S3 secret key
+- `s3_region`: S3 region
+- `s3_endpoint`: S3 endpoint URL
+- `docker_registry`: Container registry URL (e.g., registry.hra42.com)
+- `docker_repo`: Docker repository name (e.g., or-analytics)
+- `discord_webhook_id`: Discord webhook ID for notifications
+- `discord_webhook_token`: Discord webhook token for notifications
+
+**Note**: The Docker registry configuration assumes no authentication is required. If your registry requires authentication, you'll need to add `username` and `password` settings to the docker-buildx steps.
+
 ## Common Use Cases
 
 ### Cost Analysis
