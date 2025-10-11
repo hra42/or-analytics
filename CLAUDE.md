@@ -257,16 +257,18 @@ The application supports any S3-compatible object storage service through the `-
 The project uses a **multi-stage build** for optimal image size and security:
 
 **Stage 1: Builder**
-- Based on `golang:1.25.1-alpine`
-- Installs build dependencies (gcc, musl-dev for CGO)
+- Based on `golang:1.25.1` (Debian-based)
+- Installs build dependencies (gcc for CGO)
 - Compiles with optimizations (`-ldflags="-s -w" -trimpath`)
 - CGO_ENABLED=1 required for DuckDB
+- **Note**: Uses Debian instead of Alpine to avoid DuckDB compilation issues
 
 **Stage 2: Runtime**
-- Based on `alpine:latest` (minimal footprint)
-- Includes only ca-certificates and tzdata
+- Based on `debian:bookworm-slim` (minimal footprint)
+- Includes ca-certificates, tzdata, and libstdc++6
 - Runs as non-root user (analytics:1000)
 - Database stored in `/app/data` for volume mounting
+- **Note**: Debian is required for DuckDB compatibility (Alpine has linking issues)
 
 ### Docker Compose Profiles
 Service configurations available:
