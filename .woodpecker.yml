@@ -91,26 +91,36 @@ steps:
         - tag
 
   webhook-notification:
-    image: curlimages/curl:latest
+    image: ghcr.io/jqlang/jq:latest
     environment:
       WEBHOOK_URL:
         from_secret: webhook_url
     commands:
       - |
-        curl -X POST "$WEBHOOK_URL" \
+        jq -n \
+          --arg repo "${CI_REPO}" \
+          --arg commit "${CI_COMMIT_SHA}" \
+          --arg branch "${CI_COMMIT_BRANCH}" \
+          --arg status "${CI_PIPELINE_STATUS}" \
+          --arg event "${CI_PIPELINE_EVENT}" \
+          --arg author "${CI_COMMIT_AUTHOR}" \
+          --arg message "${CI_COMMIT_MESSAGE}" \
+          --arg link "${CI_PIPELINE_URL}" \
+          --argjson started "${CI_PIPELINE_STARTED:-0}" \
+          --argjson finished "${CI_PIPELINE_FINISHED:-0}" \
+          --arg tag "${CI_COMMIT_TAG}" \
+          '{
+            repo: $repo,
+            commit: $commit,
+            branch: $branch,
+            status: $status,
+            event: $event,
+            author: $author,
+            message: $message,
+            link: $link,
+            started: $started,
+            finished: $finished,
+            tag: $tag
+          }' | curl -X POST "$WEBHOOK_URL" \
           -H "Content-Type: application/json" \
-          -d @- <<EOF
-        {
-          "repo": "${CI_REPO}",
-          "commit": "${CI_COMMIT_SHA}",
-          "branch": "${CI_COMMIT_BRANCH}",
-          "status": "${CI_PIPELINE_STATUS}",
-          "event": "${CI_PIPELINE_EVENT}",
-          "author": "${CI_COMMIT_AUTHOR}",
-          "message": $(echo "$CI_COMMIT_MESSAGE" | jq -Rs .),
-          "link": "${CI_PIPELINE_URL}",
-          "started": ${CI_PIPELINE_STARTED},
-          "finished": ${CI_PIPELINE_FINISHED},
-          "tag": "${CI_COMMIT_TAG}"
-        }
-        EOF
+          -d @-
