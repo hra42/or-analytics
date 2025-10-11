@@ -92,7 +92,9 @@ steps:
 
   webhook-notification:
     image: curlimages/curl:latest
-    secrets: [webhook_url]
+    environment:
+      WEBHOOK_URL:
+        from_secret: webhook_url
     commands:
       - |
         curl -X POST "$WEBHOOK_URL" \
