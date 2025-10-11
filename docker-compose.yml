@@ -1,0 +1,149 @@
+version: '3.8'
+
+services:
+  or-analytics:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: or-analytics:latest
+    container_name: or-analytics
+    environment:
+      # OpenRouter API Key (required)
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+
+      # AWS Credentials (optional, for S3 export)
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+
+      # Database path
+      - DB_PATH=/app/data/analytics.db
+    volumes:
+      # Mount data directory for persistent database storage
+      - ./data:/app/data
+
+      # Optional: Mount AWS credentials from host
+      # - ~/.aws:/home/analytics/.aws:ro
+
+    # Default command can be overridden
+    # Example: docker-compose run or-analytics -date 2025-10-08 -verbose
+    command: ["-db", "/app/data/analytics.db"]
+
+    # Restart policy (for scheduled runs)
+    restart: "no"
+
+  # Scheduler mode: Runs continuously with built-in scheduler
+  or-analytics-scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: or-analytics:latest
+    container_name: or-analytics-scheduler
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - TZ=${TIMEZONE:-UTC}
+      - DB_PATH=/app/data/analytics.db
+    volumes:
+      - ./data:/app/data
+    command:
+      - "-schedule"
+      - "daily"  # Run daily at midnight
+      - "-db"
+      - "/app/data/analytics.db"
+      - "-verbose"
+
+    # Restart policy for long-running scheduler
+    restart: unless-stopped
+
+    # This service won't start automatically
+    # Use with: docker-compose up -d or-analytics-scheduler
+    profiles:
+      - scheduler
+
+  # Scheduler with S3 export
+  or-analytics-scheduler-s3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: or-analytics:latest
+    container_name: or-analytics-scheduler-s3
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - TZ=${TIMEZONE:-UTC}
+      - DB_PATH=/app/data/analytics.db
+    volumes:
+      - ./data:/app/data
+    command:
+      - "-schedule"
+      - "daily"
+      - "-db"
+      - "/app/data/analytics.db"
+      - "-export"
+      - "${S3_EXPORT_PATH:-s3://my-bucket/backups/analytics.parquet}"
+      - "-verbose"
+
+    # Restart policy for long-running scheduler
+    restart: unless-stopped
+
+    profiles:
+      - scheduler-s3
+
+  # Example: One-time scheduled import with S3 backup (legacy - use scheduler instead)
+  or-analytics-scheduled:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: or-analytics:latest
+    container_name: or-analytics-scheduled
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - DB_PATH=/app/data/analytics.db
+    volumes:
+      - ./data:/app/data
+    command:
+      - "-db"
+      - "/app/data/analytics.db"
+      - "-export"
+      - "s3://my-bucket/backups/analytics.parquet"
+
+    # This service won't start automatically
+    # Use with: docker-compose run or-analytics-scheduled
+    profiles:
+      - scheduled
+
+  # Example: MinIO-compatible S3 export
+  or-analytics-minio:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: or-analytics:latest
+    container_name: or-analytics-minio
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - AWS_ACCESS_KEY_ID=${MINIO_ACCESS_KEY:-}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_SECRET_KEY:-}
+      - AWS_REGION=us-east-1
+      - DB_PATH=/app/data/analytics.db
+    volumes:
+      - ./data:/app/data
+    command:
+      - "-db"
+      - "/app/data/analytics.db"
+      - "-export"
+      - "s3://analytics/data.parquet"
+      - "-s3-endpoint"
+      - "${MINIO_ENDPOINT:-http://minio:9000}"
+      - "-s3-path-style"
+
+    # This service won't start automatically
+    profiles:
+      - minio
