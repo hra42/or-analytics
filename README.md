@@ -600,12 +600,10 @@ Configure these secrets in Woodpecker:
 - `s3_secret_key`: S3 secret key
 - `s3_region`: S3 region
 - `s3_endpoint`: S3 endpoint URL
-- `docker_registry`: Container registry URL (e.g., registry.hra42.com)
-- `docker_repo`: Docker repository name (e.g., or-analytics)
 - `discord_webhook_id`: Discord webhook ID for notifications
 - `discord_webhook_token`: Discord webhook token for notifications
 
-**Note**: The Docker registry configuration assumes no authentication is required. If your registry requires authentication, you'll need to add `username` and `password` settings to the docker-buildx steps.
+**Note**: Docker images are pushed to `registry.hra42.com/or-analytics` with no authentication required. If you need to use a different registry or require authentication, modify the `repo` setting in the docker-buildx steps and add `username` and `password` settings.
 
 ## Common Use Cases
 
