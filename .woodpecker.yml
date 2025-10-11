@@ -105,7 +105,7 @@ steps:
           "event": "{{ build.event }}",
           "author": "{{ build.author }}",
           "link": "{{ build.link }}",
-          "started": {{ build.started }},
-          "finished": {{ build.finished }},
+          "started": "{{ build.started }}",
+          "finished": "{{ build.finished }}",
           "tag": "{{ build.tag }}"
         }
