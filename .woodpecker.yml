@@ -24,9 +24,7 @@ steps:
       - apt-get update && apt-get install -y gcc
       - CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -trimpath -o or-analytics-amd64 .
     when:
-      event:
-        exclude:
-          - pull_request
+      - event: [push, manual, tag]
 
   build-arm64:
     image: registry.hra42.com/golang:1.25.1
@@ -37,9 +35,7 @@ steps:
       - apt-get update && apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
       - CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc CXX=aarch64-linux-gnu-g++ go build -ldflags="-s -w" -trimpath -o or-analytics-arm64 .
     when:
-      event:
-        exclude:
-          - pull_request
+      - event: [push, manual, tag]
 
   upload-to-s3:
     image: woodpeckerci/plugin-s3
