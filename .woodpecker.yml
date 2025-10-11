@@ -102,12 +102,23 @@ steps:
       event:
         - tag
 
-  discord-notification:
-    image: appleboy/drone-discord
+  webhook-notification:
+    image: plugins/webhook
     settings:
-      webhook_id:
-        from_secret: discord_webhook_id
-      webhook_token:
-        from_secret: discord_webhook_token
-      username: Woodpecker CI
-    failure: ignore
+      urls:
+        from_secret: webhook_url
+      content_type: application/json
+      template: |
+        {
+          "repo": "{{ repo.full_name }}",
+          "commit": "{{ build.commit }}",
+          "branch": "{{ build.branch }}",
+          "status": "{{ build.status }}",
+          "event": "{{ build.event }}",
+          "author": "{{ build.author }}",
+          "message": "{{ build.message }}",
+          "link": "{{ build.link }}",
+          "started": {{ build.started }},
+          "finished": {{ build.finished }},
+          "tag": "{{ build.tag }}"
+        }

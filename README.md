@@ -590,7 +590,7 @@ The pipeline runs automatically on:
 2. **Binary Builds**: Builds for linux/amd64 and linux/arm64
 3. **S3 Upload**: Uploads binaries to S3 (main branch and manual triggers)
 4. **Docker Images**: Builds multi-platform Docker images (linux/amd64, linux/arm64)
-5. **Notifications**: Sends Discord notifications on completion
+5. **Notifications**: Sends webhook notifications with build status and details
 
 ### Required Secrets
 
@@ -600,8 +600,7 @@ Configure these secrets in Woodpecker:
 - `s3_secret_key`: S3 secret key
 - `s3_region`: S3 region
 - `s3_endpoint`: S3 endpoint URL
-- `discord_webhook_id`: Discord webhook ID for notifications
-- `discord_webhook_token`: Discord webhook token for notifications
+- `webhook_url`: Webhook URL for build notifications (e.g., n8n instance)
 
 **Note**: Docker images are pushed to `registry.hra42.com/or-analytics` with no authentication required. If you need to use a different registry or require authentication, modify the `repo` setting in the docker-buildx steps and add `username` and `password` settings.
 
