@@ -23,6 +23,8 @@ steps:
     commands:
       - apt-get update && apt-get install -y gcc
       - CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -trimpath -o or-analytics-amd64 .
+    when:
+      - event: [push, manual, tag]
 
   build-arm64:
     image: registry.hra42.com/golang:1.25.1
@@ -32,6 +34,8 @@ steps:
     commands:
       - apt-get update && apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
       - CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc CXX=aarch64-linux-gnu-g++ go build -ldflags="-s -w" -trimpath -o or-analytics-arm64 .
+    when:
+      - event: [push, manual, tag]
 
   upload-to-s3:
     image: woodpeckerci/plugin-s3
@@ -55,22 +59,6 @@ steps:
         - manual
       branch:
         - main
-
-  # Build Docker image
-  docker-build:
-    image: woodpeckerci/plugin-docker-buildx
-    settings:
-      repo: or-analytics
-      dockerfile: Dockerfile
-      platforms: linux/amd64,linux/arm64
-      tags:
-        - ${CI_COMMIT_SHA:0:8}
-        - latest
-      dry_run: true
-    when:
-      event:
-        - pull_request
-        - manual
 
   # Build and push Docker image (main branch)
   docker-build-push-main:
@@ -116,9 +104,8 @@ steps:
           "status": "{{ build.status }}",
           "event": "{{ build.event }}",
           "author": "{{ build.author }}",
-          "message": "{{ build.message }}",
           "link": "{{ build.link }}",
-          "started": {{ build.started }},
-          "finished": {{ build.finished }},
+          "started": "{{ build.started }}",
+          "finished": "{{ build.finished }}",
           "tag": "{{ build.tag }}"
         }
