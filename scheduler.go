@@ -23,6 +23,7 @@ type SchedulerConfig struct {
 	S3Config         *S3Config // Optional S3 configuration
 	Verbose          bool    // Verbose logging
 	Timezone         string  // Timezone for scheduling (default: UTC)
+	WebhookURL       string  // Optional webhook URL for notifications
 }
 
 // JobConfig holds configuration for a single job execution
@@ -33,6 +34,7 @@ type JobConfig struct {
 	ExportPath string
 	S3Config   *S3Config
 	Verbose    bool
+	WebhookURL string
 }
 
 // RunScheduler starts the scheduler and runs jobs according to the schedule
@@ -44,6 +46,9 @@ func RunScheduler(ctx context.Context, config *SchedulerConfig) error {
 
 	if config.ExportPath != "" {
 		log.Printf("Export: %s", config.ExportPath)
+	}
+	if config.WebhookURL != "" {
+		log.Printf("Webhook: %s", config.WebhookURL)
 	}
 
 	// Get API key from environment
@@ -91,6 +96,7 @@ func RunScheduler(ctx context.Context, config *SchedulerConfig) error {
 		ExportPath: config.ExportPath,
 		S3Config:   config.S3Config,
 		Verbose:    config.Verbose,
+		WebhookURL: config.WebhookURL,
 	}
 
 	// Define the job function
@@ -166,6 +172,10 @@ func runImportJob(ctx context.Context, config *JobConfig) error {
 	startTime := time.Now()
 	log.Printf("Starting import job at %s", startTime.Format(time.RFC3339))
 
+	// Prepare webhook payload (will be populated and sent at the end)
+	var webhookPayload *WebhookPayload
+	var jobError error
+
 	// Fetch activity data
 	var options *openrouter.ActivityOptions
 	if config.DateFilter != "" {
@@ -183,7 +193,9 @@ func runImportJob(ctx context.Context, config *JobConfig) error {
 
 	activity, err := config.Client.GetActivity(ctx, options)
 	if err != nil {
-		return fmt.Errorf("failed to get activity: %w", err)
+		jobError = fmt.Errorf("failed to get activity: %w", err)
+		sendErrorWebhook(ctx, config, startTime, 0, jobError)
+		return jobError
 	}
 
 	if config.Verbose {
@@ -228,7 +240,9 @@ func runImportJob(ctx context.Context, config *JobConfig) error {
 				log.Printf("Exporting data to S3: %s", config.ExportPath)
 			}
 			if err := ExportToS3(ctx, config.DB, config.ExportPath, config.S3Config); err != nil {
-				return fmt.Errorf("failed to export to S3: %w", err)
+				jobError = fmt.Errorf("failed to export to S3: %w", err)
+				sendErrorWebhook(ctx, config, startTime, inserted, jobError)
+				return jobError
 			}
 			log.Printf("Successfully exported to %s", config.ExportPath)
 		} else {
@@ -236,7 +250,9 @@ func runImportJob(ctx context.Context, config *JobConfig) error {
 				log.Printf("Exporting data to Parquet file: %s", config.ExportPath)
 			}
 			if err := ExportToParquet(config.DB, config.ExportPath); err != nil {
-				return fmt.Errorf("failed to export to Parquet: %w", err)
+				jobError = fmt.Errorf("failed to export to Parquet: %w", err)
+				sendErrorWebhook(ctx, config, startTime, inserted, jobError)
+				return jobError
 			}
 			log.Printf("Successfully exported to %s", config.ExportPath)
 		}
@@ -245,5 +261,58 @@ func runImportJob(ctx context.Context, config *JobConfig) error {
 	duration := time.Since(startTime)
 	log.Printf("Import job completed in %s", duration.Round(time.Second))
 
+	// Send webhook notification with metrics
+	if config.WebhookURL != "" {
+		webhookPayload, err = GetDatabaseMetrics(config.DB)
+		if err != nil {
+			log.Printf("Warning: failed to get database metrics for webhook: %v", err)
+		} else {
+			// Add job-specific information
+			webhookPayload.RecordsImported = inserted
+			webhookPayload.JobDuration = duration.Round(time.Second).String()
+			webhookPayload.JobStatus = "success"
+
+			if config.Verbose {
+				log.Printf("Sending webhook notification to %s", config.WebhookURL)
+			}
+
+			if err := SendWebhook(ctx, config.WebhookURL, webhookPayload); err != nil {
+				log.Printf("Warning: failed to send webhook: %v", err)
+			} else if config.Verbose {
+				log.Printf("Webhook notification sent successfully")
+			}
+		}
+	}
+
 	return nil
+}
+
+// sendErrorWebhook sends a webhook notification when a job fails
+func sendErrorWebhook(ctx context.Context, config *JobConfig, startTime time.Time, recordsImported int, jobError error) {
+	if config.WebhookURL == "" {
+		return
+	}
+
+	// Get whatever metrics we can from the database
+	payload, err := GetDatabaseMetrics(config.DB)
+	if err != nil {
+		// If we can't get metrics, create a minimal payload
+		payload = &WebhookPayload{
+			Timestamp: time.Now().UTC().Format(time.RFC3339),
+		}
+	}
+
+	// Add error information
+	payload.RecordsImported = recordsImported
+	payload.JobDuration = time.Since(startTime).Round(time.Second).String()
+	payload.JobStatus = "error"
+	payload.ErrorMessage = jobError.Error()
+
+	if config.Verbose {
+		log.Printf("Sending error webhook notification to %s", config.WebhookURL)
+	}
+
+	if err := SendWebhook(ctx, config.WebhookURL, payload); err != nil {
+		log.Printf("Warning: failed to send error webhook: %v", err)
+	}
 }
