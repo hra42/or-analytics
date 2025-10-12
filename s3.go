@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -45,6 +46,36 @@ func ParseS3URI(uri string) (*S3Path, error) {
 // IsS3Path checks if a path is an S3 URI
 func IsS3Path(path string) bool {
 	return strings.HasPrefix(path, "s3://")
+}
+
+// addDateToS3Path adds the current date to the S3 path before the file extension
+// Example: s3://bucket/file.parquet -> s3://bucket/file-20250112.parquet
+func addDateToS3Path(s3URI string) string {
+	// Get current date in YYYYMMDD format
+	currentDate := time.Now().UTC().Format("20060102")
+
+	// Find the last slash to separate path from filename
+	lastSlashIdx := strings.LastIndex(s3URI, "/")
+	if lastSlashIdx == -1 {
+		// No slash found, just append date (shouldn't happen with valid S3 URIs)
+		return s3URI + "-" + currentDate
+	}
+
+	// Split into path and filename
+	pathPart := s3URI[:lastSlashIdx+1]
+	filename := s3URI[lastSlashIdx+1:]
+
+	// Find the extension
+	extIdx := strings.LastIndex(filename, ".")
+	if extIdx == -1 {
+		// No extension, append date at the end
+		return pathPart + filename + "-" + currentDate
+	}
+
+	// Insert date before the extension
+	nameWithoutExt := filename[:extIdx]
+	ext := filename[extIdx:]
+	return pathPart + nameWithoutExt + "-" + currentDate + ext
 }
 
 // S3Config holds configuration for S3 uploads
@@ -120,6 +151,7 @@ func UploadToS3(ctx context.Context, filePath string, s3URI string, cfg *S3Confi
 
 // ExportToS3 exports data to a Parquet file and uploads it to S3
 // The file is created locally in a temp directory and then uploaded
+// The S3 URI is modified to include the current date before the file extension
 func ExportToS3(ctx context.Context, db *sql.DB, s3URI string, cfg *S3Config) error {
 	// Create temporary file
 	tempDir := os.TempDir()
@@ -135,8 +167,11 @@ func ExportToS3(ctx context.Context, db *sql.DB, s3URI string, cfg *S3Config) er
 		return fmt.Errorf("failed to export to parquet: %w", err)
 	}
 
+	// Add date to the S3 URI filename
+	s3URIWithDate := addDateToS3Path(s3URI)
+
 	// Upload to S3
-	if err := UploadToS3(ctx, tempFile, s3URI, cfg); err != nil {
+	if err := UploadToS3(ctx, tempFile, s3URIWithDate, cfg); err != nil {
 		return err
 	}
 

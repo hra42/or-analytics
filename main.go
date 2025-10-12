@@ -25,12 +25,13 @@ func main() {
 	// Scheduler flags
 	schedule := flag.String("schedule", "", "Run as a scheduler with specified schedule (daily, hourly, now, or cron expression)")
 	timezone := flag.String("timezone", "UTC", "Timezone for scheduler (e.g., America/New_York, Europe/London)")
+	webhookURL := flag.String("webhook-url", "", "Webhook URL to send notifications after each scheduled run")
 
 	flag.Parse()
 
 	// Check if running in scheduler mode
 	if *schedule != "" {
-		runSchedulerMode(*schedule, *timezone, *dateFilter, *dbPathFlag, *exportPath, *s3Endpoint, *s3ForcePathStyle, *verbose)
+		runSchedulerMode(*schedule, *timezone, *dateFilter, *dbPathFlag, *exportPath, *s3Endpoint, *s3ForcePathStyle, *verbose, *webhookURL)
 		return
 	}
 
@@ -39,7 +40,7 @@ func main() {
 }
 
 // runSchedulerMode runs the application as a scheduler
-func runSchedulerMode(scheduleExpr, timezone, dateFilter, dbPath, exportPath, s3Endpoint string, s3PathStyle, verbose bool) {
+func runSchedulerMode(scheduleExpr, timezone, dateFilter, dbPath, exportPath, s3Endpoint string, s3PathStyle, verbose bool, webhookURL string) {
 	ctx := context.Background()
 
 	// Create S3 config if needed
@@ -60,6 +61,7 @@ func runSchedulerMode(scheduleExpr, timezone, dateFilter, dbPath, exportPath, s3
 		S3Config:   s3Config,
 		Verbose:    verbose,
 		Timezone:   timezone,
+		WebhookURL: webhookURL,
 	}
 
 	// Run scheduler

@@ -16,6 +16,8 @@ OR Analytics is a lightweight tool that fetches activity data from OpenRouter's 
 - 📝 Example SQL queries for common analyses
 - 📦 Export data to Parquet format (local or S3)
 - ☁️ Direct S3 upload support (AWS S3, MinIO, DigitalOcean Spaces, Cloudflare R2, etc.)
+- ⏰ Built-in scheduler with timezone support (daily, hourly, custom cron)
+- 🔔 Webhook notifications with comprehensive metrics
 - 🐳 Docker support with optimized multi-stage builds
 - ⚡ Fast and lightweight
 
@@ -128,6 +130,7 @@ go run main.go -date 2025-10-08 -db custom.db -verbose -export s3://my-bucket/da
 - `-s3-path-style` - Use path-style S3 URLs (required for MinIO and some providers)
 - `-schedule` - Run as a scheduler with specified schedule (daily, hourly, now, or cron expression)
 - `-timezone` - Timezone for scheduler (default: UTC)
+- `-webhook-url` - Webhook URL to send notifications after each scheduled run
 
 ### Example Output
 
@@ -225,14 +228,20 @@ go run main.go -date 2025-10-08 -export oct08_activity.parquet
 **Direct S3 upload:**
 ```bash
 # Export directly to AWS S3 (requires AWS credentials)
+# The current date (YYYYMMDD) is automatically appended to the filename
 go run main.go -export s3://my-bucket/analytics/activity.parquet
-
-# Export to S3 with date in filename
-go run main.go -export s3://my-bucket/analytics/$(date +%Y-%m-%d).parquet
+# Results in: s3://my-bucket/analytics/activity-20251012.parquet
 
 # Export specific date to S3
-go run main.go -date 2025-10-08 -export s3://my-bucket/daily/2025-10-08.parquet
+go run main.go -date 2025-10-08 -export s3://my-bucket/daily/data.parquet
+# Results in: s3://my-bucket/daily/data-20251012.parquet
 ```
+
+**Note:** When exporting to S3, the current date (in YYYYMMDD format) is automatically inserted before the file extension. For example:
+- `s3://bucket/file.parquet` → `s3://bucket/file-20251012.parquet`
+- `s3://bucket/path/data.parquet` → `s3://bucket/path/data-20251012.parquet`
+
+This ensures each export has a unique filename and makes it easy to track when data was exported.
 
 **S3-Compatible Providers (MinIO, DigitalOcean Spaces, Cloudflare R2, etc.):**
 ```bash
@@ -300,8 +309,9 @@ The application includes a built-in scheduler that eliminates the need for exter
 # Run scheduler
 go run main.go -schedule daily
 
-# With export to S3
+# With export to S3 (date is automatically added to filename)
 go run main.go -schedule daily -export s3://my-bucket/analytics.parquet
+# Each run creates: s3://my-bucket/analytics-YYYYMMDD.parquet
 
 # With custom timezone
 go run main.go -schedule daily -timezone America/New_York
@@ -356,6 +366,87 @@ docker-compose stop or-analytics-scheduler
 - ✅ **Self-contained**: Everything runs in one process
 - ✅ **Docker-friendly**: Runs as a long-running container with restart policies
 - ✅ **Graceful shutdown**: Handles SIGTERM and SIGINT properly
+- ✅ **Webhook notifications**: Send metrics to external services after each run
+
+### Webhook Notifications
+
+The scheduler can send webhook notifications after each run with comprehensive metrics about the import job. This is useful for monitoring, alerting, and integrating with workflow automation tools like n8n, Zapier, or Make.
+
+**Enable webhook notifications:**
+```bash
+# Basic webhook
+go run main.go -schedule daily -webhook-url https://your-webhook-url.com/endpoint
+
+# With S3 export
+go run main.go -schedule daily \
+  -export s3://my-bucket/analytics.parquet \
+  -webhook-url https://n8n.example.com/webhook/or-analytics
+
+# With verbose logging
+go run main.go -schedule daily -webhook-url https://hooks.example.com/notify -verbose
+```
+
+**Docker with webhook:**
+```bash
+# Set webhook URL in environment
+docker-compose --profile scheduler up -d or-analytics-scheduler \
+  -e WEBHOOK_URL=https://n8n.example.com/webhook/or-analytics
+```
+
+**Webhook payload format:**
+
+The webhook receives a JSON payload with the following structure:
+
+```json
+{
+  "timestamp": "2025-10-12T10:30:00Z",
+  "total_records": 185,
+  "unique_dates": 30,
+  "unique_models": 19,
+  "unique_providers": 16,
+  "date_range_start": "2025-09-12",
+  "date_range_end": "2025-10-12",
+  "total_requests": 2706,
+  "total_usage": 3.91,
+  "records_imported": 10,
+  "job_duration": "5s",
+  "job_status": "success"
+}
+```
+
+**On error, additional fields are included:**
+
+```json
+{
+  "timestamp": "2025-10-12T10:30:00Z",
+  "job_status": "error",
+  "job_duration": "2s",
+  "error_message": "failed to get activity: connection timeout",
+  "records_imported": 0
+}
+```
+
+**Field descriptions:**
+- `timestamp` - ISO 8601 timestamp when the webhook was sent (UTC)
+- `total_records` - Total number of records in the database
+- `unique_dates` - Number of unique dates in the database
+- `unique_models` - Number of unique models tracked
+- `unique_providers` - Number of unique providers tracked
+- `date_range_start` - Earliest date in the database (YYYY-MM-DD)
+- `date_range_end` - Latest date in the database (YYYY-MM-DD)
+- `total_requests` - Total API requests across all records
+- `total_usage` - Total usage cost in dollars
+- `records_imported` - Number of new records imported in this job
+- `job_duration` - How long the import job took
+- `job_status` - Either "success" or "error"
+- `error_message` - Error description (only present when status is "error")
+
+**Use cases:**
+- Monitor job completion in real-time
+- Alert on failures via Discord, Slack, or email
+- Trigger downstream workflows (e.g., run analysis pipelines)
+- Track usage trends and costs
+- Log metrics to external monitoring systems
 
 ## Automation (External Cron)
 

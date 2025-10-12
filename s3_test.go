@@ -1,6 +1,7 @@
 package main
 
 import (
+	"regexp"
 	"testing"
 )
 
@@ -101,6 +102,72 @@ func TestIsS3Path(t *testing.T) {
 			got := IsS3Path(tt.path)
 			if got != tt.want {
 				t.Errorf("IsS3Path(%q) = %v, want %v", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAddDateToS3Path(t *testing.T) {
+	// Pattern to match YYYYMMDD format
+	datePattern := regexp.MustCompile(`-\d{8}\.parquet$`)
+	datePatternNoExt := regexp.MustCompile(`-\d{8}$`)
+
+	tests := []struct {
+		name            string
+		uri             string
+		wantPattern     *regexp.Regexp
+		shouldContain   string
+	}{
+		{
+			name:            "simple S3 path with extension",
+			uri:             "s3://bucket/file.parquet",
+			wantPattern:     datePattern,
+			shouldContain:   "s3://bucket/file-",
+		},
+		{
+			name:            "nested S3 path with extension",
+			uri:             "s3://bucket/folder/subfolder/data.parquet",
+			wantPattern:     datePattern,
+			shouldContain:   "s3://bucket/folder/subfolder/data-",
+		},
+		{
+			name:            "S3 path without extension",
+			uri:             "s3://bucket/file",
+			wantPattern:     datePatternNoExt,
+			shouldContain:   "s3://bucket/file-",
+		},
+		{
+			name:            "S3 path with multiple dots",
+			uri:             "s3://bucket/file.backup.parquet",
+			wantPattern:     datePattern,
+			shouldContain:   "s3://bucket/file.backup-",
+		},
+		{
+			name:            "S3 path with hyphens in name",
+			uri:             "s3://my-bucket/my-file.parquet",
+			wantPattern:     datePattern,
+			shouldContain:   "s3://my-bucket/my-file-",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := addDateToS3Path(tt.uri)
+
+			// Check that result contains the base path
+			if !regexp.MustCompile(regexp.QuoteMeta(tt.shouldContain)).MatchString(got) {
+				t.Errorf("addDateToS3Path(%q) = %q, should contain %q", tt.uri, got, tt.shouldContain)
+			}
+
+			// Check that result matches expected date pattern
+			if !tt.wantPattern.MatchString(got) {
+				t.Errorf("addDateToS3Path(%q) = %q, should match pattern %q", tt.uri, got, tt.wantPattern.String())
+			}
+
+			// Verify the date is in YYYYMMDD format (8 digits)
+			dateMatch := regexp.MustCompile(`-(\d{8})`).FindStringSubmatch(got)
+			if len(dateMatch) < 2 {
+				t.Errorf("addDateToS3Path(%q) = %q, should contain date in format -YYYYMMDD", tt.uri, got)
 			}
 		})
 	}
