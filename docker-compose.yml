@@ -1,6 +1,38 @@
 version: '3.8'
 
 services:
+  or-analytics-scheduler-minio:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: registry.hra42.com/or-analytics:latest
+    container_name: or-analytics-scheduler-minio
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - AWS_ACCESS_KEY_ID=${MINIO_ACCESS_KEY}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_SECRET_KEY}
+      - AWS_REGION=us-east-1
+      - TZ=${TIMEZONE:-Europe/Berlin}
+      - DB_PATH=/app/data/analytics.db
+    volumes:
+      - ./data:/app/data
+    command:
+      - "-schedule"
+      - "now"
+      - "-db"
+      - "/app/data/analytics.db"
+      - "-export"
+      - "s3://backup/analytics/analytics.parquet"
+      - "-s3-endpoint"
+      - "https://s3.hra42.com"
+      - "-s3-path-style"
+      - "-timezone"
+      - "Europe/Berlin"
+      - "-webhook-url"
+      - "https://n8n.hra42.com/webhook/or-analytics"
+      - "-verbose"
+    restart: unless-stopped
+
   or-analytics:
     build:
       context: .
