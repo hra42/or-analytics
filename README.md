@@ -31,6 +31,12 @@ OpenRouter API → DuckDB (in-memory) → DuckLake → PostgreSQL Catalog + S3/R
 - PostgreSQL instance for DuckLake catalog
 - S3-compatible object storage (AWS S3, Cloudflare R2, MinIO, etc.)
 
+### Key Dependencies
+
+- [`github.com/duckdb/duckdb-go/v2`](https://github.com/duckdb/duckdb-go) (v2.5.0) - Official DuckDB Go driver with DuckLake extensions
+- [`github.com/hra42/openrouter-go`](https://github.com/hra42/openrouter-go) (v1.0.0) - OpenRouter API client
+- [`github.com/go-co-op/gocron/v2`](https://github.com/go-co-op/gocron) (v2.17.0) - Scheduler library
+
 ## Quick Start
 
 ### 1. Set up DuckLake Infrastructure

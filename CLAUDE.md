@@ -10,8 +10,8 @@ The application tracks API usage, costs, token consumption, and model performanc
 
 **Key Dependencies:**
 - `github.com/hra42/openrouter-go` (v1.0.0) - OpenRouter API client
-- `github.com/marcboeker/go-duckdb` - DuckDB database driver with DuckLake extensions
-- `github.com/go-co-op/gocron/v2` - Scheduler library
+- `github.com/duckdb/duckdb-go/v2` (v2.5.0) - Official DuckDB database driver with DuckLake extensions
+- `github.com/go-co-op/gocron/v2` (v2.17.0) - Scheduler library
 - Go 1.25.1+
 
 **Important:** This application requires an OpenRouter **provisioning key** (not a regular API key) from https://openrouter.ai/settings/provisioning-keys. Set it via `OPENROUTER_API_KEY` environment variable.
