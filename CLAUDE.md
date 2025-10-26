@@ -164,10 +164,10 @@ AS or_analytics (DATA_PATH 's3://or-analytics');
 USE or_analytics;
 
 -- Query data
-SELECT * FROM activity LIMIT 10;
+SELECT * FROM analytics LIMIT 10;
 
 -- Time travel
-SELECT * FROM activity AS OF TIMESTAMP '2025-10-01 00:00:00';
+SELECT * FROM analytics AS OF TIMESTAMP '2025-10-01 00:00:00';
 ```
 
 ## Architecture
@@ -197,10 +197,10 @@ The codebase follows a flat structure with clear separation of concerns:
 
 ### Database Schema
 
-The `activity` table in DuckLake uses a composite primary key `(date, model, provider_name)` to ensure uniqueness.
+The `analytics` table in DuckLake uses a composite primary key `(date, model, provider_name)` to ensure uniqueness.
 
 ```sql
-CREATE TABLE activity (
+CREATE TABLE analytics (
     date DATE,
     model VARCHAR,
     provider_name VARCHAR,
@@ -354,5 +354,5 @@ The OpenRouter client is imported from `github.com/hra42/openrouter-go` - modifi
 **Migrating from old local database mode:**
 If you have existing data in the old `analytics.db` file:
 1. Set up DuckLake infrastructure (PostgreSQL catalog + S3 bucket)
-2. Export old data: `duckdb analytics.db -c "COPY activity TO 'export.parquet' (FORMAT PARQUET)"`
-3. Import to DuckLake: Connect via DuckDB CLI and run `INSERT INTO activity SELECT * FROM read_parquet('export.parquet')`
+2. Export old data: `duckdb analytics.db -c "COPY analytics TO 'export.parquet' (FORMAT PARQUET)"`
+3. Import to DuckLake: Connect via DuckDB CLI and run `INSERT INTO analytics SELECT * FROM read_parquet('export.parquet')`

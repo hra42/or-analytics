@@ -35,30 +35,30 @@ func GetDatabaseMetrics(db *sql.DB) (*WebhookPayload, error) {
 	}
 
 	// Get total record count
-	err := db.QueryRow("SELECT COUNT(*) FROM activity").Scan(&payload.TotalRecords)
+	err := db.QueryRow("SELECT COUNT(*) FROM analytics").Scan(&payload.TotalRecords)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get total records: %w", err)
 	}
 
 	// Get unique counts
-	err = db.QueryRow("SELECT COUNT(DISTINCT date) FROM activity").Scan(&payload.UniqueDates)
+	err = db.QueryRow("SELECT COUNT(DISTINCT date) FROM analytics").Scan(&payload.UniqueDates)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get unique dates: %w", err)
 	}
 
-	err = db.QueryRow("SELECT COUNT(DISTINCT model) FROM activity").Scan(&payload.UniqueModels)
+	err = db.QueryRow("SELECT COUNT(DISTINCT model) FROM analytics").Scan(&payload.UniqueModels)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get unique models: %w", err)
 	}
 
-	err = db.QueryRow("SELECT COUNT(DISTINCT provider_name) FROM activity").Scan(&payload.UniqueProviders)
+	err = db.QueryRow("SELECT COUNT(DISTINCT provider_name) FROM analytics").Scan(&payload.UniqueProviders)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get unique providers: %w", err)
 	}
 
 	// Get date range
 	var startDate, endDate sql.NullString
-	err = db.QueryRow("SELECT MIN(date)::VARCHAR, MAX(date)::VARCHAR FROM activity").Scan(&startDate, &endDate)
+	err = db.QueryRow("SELECT MIN(date)::VARCHAR, MAX(date)::VARCHAR FROM analytics").Scan(&startDate, &endDate)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get date range: %w", err)
 	}
@@ -72,7 +72,7 @@ func GetDatabaseMetrics(db *sql.DB) (*WebhookPayload, error) {
 
 	// Get total requests and usage
 	var requests, usage sql.NullFloat64
-	err = db.QueryRow("SELECT COALESCE(SUM(requests), 0), COALESCE(SUM(usage), 0) FROM activity").Scan(&requests, &usage)
+	err = db.QueryRow("SELECT COALESCE(SUM(requests), 0), COALESCE(SUM(usage), 0) FROM analytics").Scan(&requests, &usage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get totals: %w", err)
 	}

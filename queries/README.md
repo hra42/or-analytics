@@ -51,7 +51,7 @@ Weekly aggregated spending and usage statistics.
 You can also run custom queries directly:
 
 ```bash
-duckdb analytics.db "SELECT model, SUM(usage) as total FROM activity GROUP BY model;"
+duckdb analytics.db "SELECT model, SUM(usage) as total FROM analytics GROUP BY model;"
 ```
 
 ## Exporting Results
@@ -59,11 +59,11 @@ duckdb analytics.db "SELECT model, SUM(usage) as total FROM activity GROUP BY mo
 Export query results to CSV:
 
 ```bash
-duckdb analytics.db "COPY (SELECT * FROM activity) TO 'export.csv' (HEADER, DELIMITER ',');"
+duckdb analytics.db "COPY (SELECT * FROM analytics) TO 'export.csv' (HEADER, DELIMITER ',');"
 ```
 
 Export to Parquet for efficient storage:
 
 ```bash
-duckdb analytics.db "COPY (SELECT * FROM activity) TO 'export.parquet' (FORMAT PARQUET);"
+duckdb analytics.db "COPY (SELECT * FROM analytics) TO 'export.parquet' (FORMAT PARQUET);"
 ```

@@ -197,7 +197,7 @@ SELECT
     model,
     SUM(requests) as total_requests,
     SUM(usage) as total_cost
-FROM activity
+FROM analytics
 WHERE date >= current_date - 7
 GROUP BY date, model
 ORDER BY date DESC, total_cost DESC;
@@ -209,10 +209,10 @@ DuckLake automatically creates snapshots, allowing you to query historical data:
 
 ```sql
 -- Query data as it was at a specific timestamp
-SELECT * FROM activity AS OF TIMESTAMP '2025-10-01 00:00:00';
+SELECT * FROM analytics AS OF TIMESTAMP '2025-10-01 00:00:00';
 
 -- Query a specific snapshot version
-SELECT * FROM activity AS OF VERSION 42;
+SELECT * FROM analytics AS OF VERSION 42;
 ```
 
 ## Development

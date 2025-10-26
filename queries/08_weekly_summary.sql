@@ -7,6 +7,6 @@ SELECT
     SUM(requests) as total_requests,
     SUM(usage) as weekly_spend,
     SUM(prompt_tokens + completion_tokens + reasoning_tokens) as total_tokens
-FROM activity
+FROM analytics
 GROUP BY STRFTIME(date, '%Y-W%W')
 ORDER BY week DESC;

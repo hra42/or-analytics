@@ -73,7 +73,7 @@ const (
 
 	// Query to get the maximum date already in the DuckLake table
 	getMaxDateQuery = `
-		SELECT MAX(date) as max_date FROM %s.activity;
+		SELECT MAX(date) as max_date FROM %s.analytics;
 	`
 
 	// Create temporary table for fresh data
@@ -84,9 +84,9 @@ const (
 
 	// Insert new data that doesn't exist in DuckLake yet
 	incrementalInsert = `
-		INSERT INTO %s.activity
+		INSERT INTO %s.analytics
 		SELECT * FROM fresh_data
-		WHERE date > COALESCE((SELECT MAX(date) FROM %s.activity), '1900-01-01');
+		WHERE date > COALESCE((SELECT MAX(date) FROM %s.analytics), '1900-01-01');
 	`
 )
 
@@ -257,7 +257,7 @@ func GetDuckLakeSummary(db *sql.DB, dbName string) (*Summary, error) {
 			SUM(prompt_tokens) as total_prompt_tokens,
 			SUM(completion_tokens) as total_completion_tokens,
 			SUM(reasoning_tokens) as total_reasoning_tokens
-		FROM %s.activity;
+		FROM %s.analytics;
 	`, dbName)
 
 	var summary Summary

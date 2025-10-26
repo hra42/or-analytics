@@ -9,7 +9,7 @@ SELECT
     SUM(reasoning_tokens) as total_reasoning_tokens,
     SUM(usage) / NULLIF(SUM(requests), 0) as avg_cost_per_request,
     SUM(prompt_tokens + completion_tokens + reasoning_tokens) / NULLIF(SUM(requests), 0) as avg_tokens_per_request
-FROM activity
+FROM analytics
 GROUP BY model
 ORDER BY total_spend DESC
 LIMIT 10;

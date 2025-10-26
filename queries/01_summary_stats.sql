@@ -11,4 +11,4 @@ SELECT
     SUM(reasoning_tokens) as total_reasoning_tokens,
     MIN(date) as earliest_date,
     MAX(date) as latest_date
-FROM activity;
+FROM analytics;

@@ -8,7 +8,7 @@ SELECT
     SUM(prompt_tokens) as total_prompt_tokens,
     SUM(completion_tokens) as total_completion_tokens,
     SUM(reasoning_tokens) as total_reasoning_tokens
-FROM activity
+FROM analytics
 GROUP BY model, provider_name
 ORDER BY total_spend DESC
 LIMIT 20;

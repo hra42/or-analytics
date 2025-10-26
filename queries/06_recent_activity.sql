@@ -8,6 +8,6 @@ SELECT
     prompt_tokens,
     completion_tokens,
     reasoning_tokens
-FROM activity
+FROM analytics
 WHERE date >= CURRENT_DATE - INTERVAL '7 days'
 ORDER BY date DESC, usage DESC;

@@ -5,6 +5,6 @@ SELECT
     SUM(requests) as total_requests,
     SUM(usage) as daily_spend,
     SUM(prompt_tokens + completion_tokens + reasoning_tokens) as total_tokens
-FROM activity
+FROM analytics
 GROUP BY date
 ORDER BY date DESC;
