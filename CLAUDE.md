@@ -4,12 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-OR Analytics is a Go application that fetches activity data from the OpenRouter API and stores it in a DuckDB database for analysis. The application tracks API usage, costs, token consumption, and model performance.
+OR Analytics is a cloud-native Go application that fetches activity data from the OpenRouter API and stores it incrementally in **DuckLake** - a lakehouse format combining data lakes and warehouses. The application uses in-memory DuckDB for processing and persists all data in S3-compatible object storage with automatic versioning and time travel.
+
+The application tracks API usage, costs, token consumption, and model performance with efficient incremental appends (only new data written daily).
 
 **Key Dependencies:**
 - `github.com/hra42/openrouter-go` (v1.0.0) - OpenRouter API client
-- `github.com/marcboeker/go-duckdb` - DuckDB database driver
-- `github.com/aws/aws-sdk-go-v2` - AWS SDK for S3 uploads
+- `github.com/marcboeker/go-duckdb` - DuckDB database driver with DuckLake extensions
 - `github.com/go-co-op/gocron/v2` - Scheduler library
 - Go 1.25.1+
 
@@ -18,59 +19,64 @@ OR Analytics is a Go application that fetches activity data from the OpenRouter 
 ## Development Commands
 
 ### Running the Application
+
 ```bash
-# Basic run (fetches last 30 days)
+# Basic run (fetches last 30 days, incrementally appends)
 go run main.go
 
 # With specific date filter
 go run main.go -date 2025-10-08
 
-# With custom database path
-go run main.go -db custom.db
+# With custom DuckLake database name
+go run main.go -db my_analytics
 
 # With verbose logging
 go run main.go -verbose
 
-# Export to local Parquet file
-go run main.go -export activity.parquet
+# Custom PostgreSQL catalog
+go run main.go \
+  -pg-host 192.168.2.21 \
+  -pg-port 5432 \
+  -pg-user admin \
+  -pg-dbname or_analytics_catalog
 
-# Export directly to AWS S3
-go run main.go -export s3://bucket/path/file.parquet
-
-# Export to S3-compatible service (MinIO)
-go run main.go -export s3://bucket/file.parquet \
-  -s3-endpoint https://minio.example.com:9000 \
-  -s3-path-style
-
-# Export to DigitalOcean Spaces
-go run main.go -export s3://space/file.parquet \
-  -s3-endpoint https://nyc3.digitaloceanspaces.com
+# Custom S3/R2 endpoint
+go run main.go \
+  -s3-endpoint s3.hra42.com \
+  -s3-bucket my-analytics \
+  -s3-region us-east-1
 ```
+
+**Required Environment Variables:**
+- `OPENROUTER_API_KEY` - OpenRouter provisioning key
+- `PG_PASSWORD` - PostgreSQL catalog password
+- `S3_KEY` - S3/R2 access key ID
+- `S3_SECRET` - S3/R2 secret access key
 
 **Command-line flags:**
 - `-date` - Filter by specific date (YYYY-MM-DD)
-- `-db` - Database path (default: analytics.db)
+- `-db` - DuckLake database name (default: or_analytics)
 - `-verbose` - Enable verbose logging
-- `-export` - Export path (local or s3://)
-- `-s3-endpoint` - Custom S3 endpoint for S3-compatible services
-- `-s3-path-style` - Use path-style URLs (required for MinIO)
 - `-schedule` - Run as scheduler (daily, hourly, now, or cron expression)
 - `-timezone` - Scheduler timezone (default: UTC)
+- `-webhook-url` - Webhook URL for notifications
+- `-pg-host`, `-pg-port`, `-pg-user`, `-pg-password`, `-pg-dbname` - PostgreSQL catalog config
+- `-s3-key`, `-s3-secret`, `-s3-endpoint`, `-s3-bucket`, `-s3-region` - S3/R2 config
 
 ### Scheduler Mode
 
 ```bash
-# Run as scheduler (daily at midnight)
+# Run as scheduler (daily at midnight UTC)
 go run main.go -schedule daily
 
-# Scheduler with S3 export
-go run main.go -schedule daily -export s3://bucket/data.parquet
-
-# Custom cron schedule
+# Custom cron schedule (2 AM EST)
 go run main.go -schedule "0 2 * * *" -timezone America/New_York
 
-# Run now then schedule
+# Run now then schedule daily
 go run main.go -schedule now
+
+# With webhook notifications
+go run main.go -schedule daily -webhook-url https://hooks.example.com/analytics
 ```
 
 **Docker scheduler:**
@@ -81,9 +87,9 @@ docker-compose --profile scheduler up -d or-analytics-scheduler
 # View logs
 docker-compose logs -f or-analytics-scheduler
 ```
-```
 
 ### Testing
+
 ```bash
 # Run all tests
 go test -v
@@ -95,7 +101,7 @@ go test -v -cover -coverprofile=coverage.out
 go test -v -race
 
 # Run specific test
-go test -v -run TestInsertActivityRecords
+go test -v -run TestBuildPostgresConnStr
 ```
 
 ### Building
@@ -116,24 +122,52 @@ docker build -t or-analytics .
 
 # Run with Docker
 docker run --rm \
-  -e OPENROUTER_API_KEY=your_key \
-  -v $(pwd)/data:/app/data \
-  or-analytics
-
-# Run with docker-compose
-docker-compose run --rm or-analytics
+  -e OPENROUTER_API_KEY=sk-or-v1-... \
+  -e PG_PASSWORD=... \
+  -e S3_KEY=... \
+  -e S3_SECRET=... \
+  or-analytics -verbose
 
 # Build and run specific platforms
 docker buildx build --platform linux/amd64,linux/arm64 -t or-analytics .
 ```
 
-### Database Queries
-```bash
-# Run example queries
-duckdb analytics.db < queries/01_summary_stats.sql
+### Querying DuckLake Data
 
-# Interactive mode
-duckdb analytics.db
+```bash
+# From DuckDB CLI
+duckdb
+```
+
+```sql
+-- Install extensions
+INSTALL ducklake;
+INSTALL postgres;
+INSTALL httpfs;
+INSTALL aws;
+
+-- Configure credentials
+CREATE SECRET s3_bucket (
+    TYPE S3,
+    KEY_ID 'your-key',
+    SECRET 'your-secret',
+    REGION 'us-east-1',
+    ENDPOINT 's3.hra42.com',
+    USE_SSL true,
+    URL_STYLE 'path'
+);
+
+-- Attach DuckLake database
+ATTACH 'ducklake:postgres:dbname=or_analytics_catalog host=192.168.2.21 port=5432 user=admin password=...'
+AS or_analytics (DATA_PATH 's3://or-analytics');
+
+USE or_analytics;
+
+-- Query data
+SELECT * FROM activity LIMIT 10;
+
+-- Time travel
+SELECT * FROM activity AS OF TIMESTAMP '2025-10-01 00:00:00';
 ```
 
 ## Architecture
@@ -141,25 +175,29 @@ duckdb analytics.db
 ### File Structure
 The codebase follows a flat structure with clear separation of concerns:
 
-- **main.go** - CLI entry point, mode selection (one-time vs scheduler)
+- **main.go** - CLI entry point, mode selection (one-time vs scheduler), DuckLake config
 - **scheduler.go** - Built-in scheduler using gocron/v2
-- **db.go** - Database operations (schema, upsert, queries, Parquet export)
-- **s3.go** - S3 operations (upload, download, URI parsing)
-- **processor.go** - Data transformation (API response → database records)
+- **ducklake.go** - DuckLake operations (connect, incremental append, queries)
+- **processor.go** - Data transformation (API response → ActivityRecord format)
+- **webhook.go** - Webhook notification handler
 - **\*_test.go** - Comprehensive unit tests for each module
 - **Dockerfile** - Multi-stage build for optimized container images
 - **docker-compose.yml** - Docker Compose configuration with profiles
 - **.dockerignore** - Excludes unnecessary files from Docker build context
 
 ### Data Flow
-1. **Fetch**: `main.go` uses `openrouter-go` client to fetch activity data from OpenRouter API
+
+1. **Fetch**: `main.go` uses `openrouter-go` client to fetch last 30 days of activity from OpenRouter API
 2. **Transform**: `processor.go` converts API response (`openrouter.ActivityData`) to internal `ActivityRecord` format
-3. **Store**: `db.go` upserts records into DuckDB using batch transactions (100 records per batch)
-4. **Export** (optional): `db.go` exports to local Parquet, or `s3.go` uploads to S3
-5. **Display**: `main.go` queries summary statistics and prints to console
+3. **Check Last Date**: `ducklake.go` queries `MAX(date)` from DuckLake to determine what data already exists
+4. **Filter**: Only records newer than the last stored date are selected for append
+5. **Append**: `ducklake.go` performs incremental INSERT into DuckLake (creates new snapshot automatically)
+6. **Persist**: DuckLake writes Parquet files to S3 and updates PostgreSQL catalog
+7. **Display**: `main.go` queries summary statistics from DuckLake and prints to console
 
 ### Database Schema
-The `activity` table uses a composite primary key `(date, model, provider_name)` to ensure uniqueness. All upserts use `ON CONFLICT DO UPDATE` to handle duplicate imports gracefully.
+
+The `activity` table in DuckLake uses a composite primary key `(date, model, provider_name)` to ensure uniqueness.
 
 ```sql
 CREATE TABLE activity (
@@ -179,13 +217,15 @@ CREATE TABLE activity (
 
 ### Key Design Patterns
 
-**Batch Processing**: Records are inserted in batches of 100 using transactions for performance and consistency (see `main.go:92-109`).
+**In-Memory Processing**: Application uses in-memory DuckDB (no local persistence) - stateless and eliminates single point of failure (`ducklake.go:69-74`).
 
-**Upsert Logic**: All inserts use `ON CONFLICT DO UPDATE` to prevent duplicates and allow re-running without data duplication (see `db.go:24-39`).
+**Incremental Append**: Only inserts records with dates newer than `MAX(date)` from DuckLake - prevents rewriting 42 days of data daily (`ducklake.go:91-95`, `main.go:183-191`).
 
-**NULL Handling**: Summary queries use `sql.NullFloat64` to handle empty tables correctly (see `db.go:141-178`).
+**Automatic Snapshots**: DuckLake creates a new version/snapshot with each INSERT - enables time travel queries without additional code.
 
-**Date Normalization**: Dates are truncated to YYYY-MM-DD format to ensure consistent storage (see `processor.go:8-14`).
+**NULL Handling**: Summary queries use `sql.NullFloat64` to handle empty tables correctly (`ducklake.go:250-270`).
+
+**Date Normalization**: Dates are truncated to YYYY-MM-DD format to ensure consistent storage (`processor.go:8-14`).
 
 ## CI/CD
 
@@ -222,38 +262,41 @@ For Docker builds, configure these secrets in Woodpecker CI:
 
 ## Testing Notes
 
-Tests use in-memory DuckDB databases (`:memory:`) for isolation. Key test coverage:
-- Schema validation and table creation
-- Upsert behavior with duplicates
-- Primary key constraint enforcement
-- NULL value handling in summaries
+Tests use helper functions and configuration validation. Key test coverage:
+- PostgreSQL connection string building
+- DuckLake configuration structure
 - Date normalization
-- Timestamp auto-generation
-- Parquet export (local files)
-- S3 URI parsing and validation
+- Data transformation (API → ActivityRecord)
+- Webhook payload generation
 
-**Note:** Full S3 integration tests require AWS credentials and are better suited for CI/CD environments. Unit tests validate URI parsing and error handling without requiring actual S3 access.
+**Note:** Full DuckLake integration tests require:
+- Running PostgreSQL instance for catalog
+- S3/R2 credentials and bucket access
+- DuckLake extensions installed in DuckDB
+
+These are better suited for CI/CD or manual testing environments with proper credentials configured.
 
 ## S3-Compatible Services
 
-The application supports any S3-compatible object storage service through the `-s3-endpoint` and `-s3-path-style` flags:
+The application supports any S3-compatible object storage service:
 
 **Supported Services:**
-- **AWS S3** - Default, no additional flags needed
-- **MinIO** - Use `-s3-endpoint` and `-s3-path-style`
-- **DigitalOcean Spaces** - Use `-s3-endpoint`
-- **Cloudflare R2** - Use `-s3-endpoint`
-- **Backblaze B2** - Use `-s3-endpoint`
-- **Wasabi** - Use `-s3-endpoint`
+- **AWS S3** - Default
+- **Cloudflare R2** - Use custom `-s3-endpoint`
+- **MinIO** - Use custom `-s3-endpoint`
+- **DigitalOcean Spaces** - Use custom `-s3-endpoint`
+- **Backblaze B2** - Use custom `-s3-endpoint`
+- **Wasabi** - Use custom `-s3-endpoint`
 
 **Configuration:**
-- `S3Config` struct in `s3.go:50-54` holds endpoint and path-style settings
-- Custom endpoints are applied via AWS SDK v2's `BaseEndpoint` option
-- Path-style addressing (bucket.s3.com vs s3.com/bucket) is controlled via `UsePathStyle` option
+- `DuckLakeConfig` struct in `ducklake.go:35-45` holds all S3 settings
+- Credentials passed to DuckDB via `CREATE SECRET` SQL command
+- Endpoint, bucket, and region are configurable via CLI flags or environment variables
 
 ## Docker Deployment
 
 ### Dockerfile Design
+
 The project uses a **multi-stage build** for optimal image size and security:
 
 **Stage 1: Builder**
@@ -267,40 +310,49 @@ The project uses a **multi-stage build** for optimal image size and security:
 - Based on `debian:trixie-slim` (minimal footprint)
 - Includes ca-certificates, tzdata, and libstdc++6
 - Runs as non-root user (analytics:1000)
-- Database stored in `/app/data` for volume mounting
+- **No local database needed** - all persistence in DuckLake/S3
 - **Note**: Debian Trixie is required for glibc 2.38+ which DuckDB needs at runtime
 
 ### Docker Compose Profiles
+
 Service configurations available:
 
-1. **Default** (`or-analytics`): One-time import, no export
-2. **Scheduler** (`or-analytics-scheduler`): Long-running scheduler (daily at midnight)
-3. **Scheduler-S3** (`or-analytics-scheduler-s3`): Scheduler with S3 export
-4. **Scheduled** (`or-analytics-scheduled`): Legacy one-time S3 export
-5. **MinIO** (`or-analytics-minio`): MinIO-compatible storage
+1. **Scheduler** (`or-analytics-scheduler`): Long-running scheduler (daily at midnight)
 
-Use profiles with: `docker-compose --profile <name> up -d <service>` (for schedulers) or `docker-compose --profile <name> run --rm <service>` (for one-time runs)
+Use with: `docker-compose --profile scheduler up -d or-analytics-scheduler`
 
 ### Environment Variables
-- `OPENROUTER_API_KEY` - Required for API access
-- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` - For S3 export
-- `DB_PATH` - Database file path (default: `/app/data/analytics.db`)
 
-### Volume Mounts
-- `./data:/app/data` - Persistent database storage
-- `~/.aws:/home/analytics/.aws:ro` - Optional: Host AWS credentials (read-only)
+**Required:**
+- `OPENROUTER_API_KEY` - OpenRouter provisioning key
+- `PG_PASSWORD` - PostgreSQL catalog password
+- `S3_KEY` - S3/R2 access key ID
+- `S3_SECRET` - S3/R2 secret access key
+
+**Optional:**
+- `PG_HOST`, `PG_PORT`, `PG_USER`, `PG_DBNAME` - PostgreSQL catalog config
+- `S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION` - S3/R2 config
+
+### No Volume Mounts Needed
+
+Unlike traditional databases, DuckLake mode requires **no local volumes** - all data is persisted in S3 via DuckLake. The application runs stateless.
 
 ## Common Tasks
 
 **Adding a new field to the schema:**
-1. Update `ActivityRecord` struct in `db.go`
-2. Update `createTable` constant in `db.go`
-3. Update `upsertQuery` constant in `db.go`
-4. Update `ConvertActivityData()` in `processor.go`
-5. Add corresponding tests in `db_test.go`
+1. Update `ActivityRecord` struct in `ducklake.go`
+2. Update the DuckLake table schema (if creating fresh database)
+3. Update `ConvertActivityData()` in `processor.go`
+4. Add corresponding tests in `ducklake_test.go`
 
 **Creating new analysis queries:**
-Add SQL files to `queries/` directory and document in `queries/README.md`.
+Add SQL files to `queries/` directory and document in `queries/README.md`. All queries should use DuckLake connection pattern shown above.
 
 **Modifying API client behavior:**
 The OpenRouter client is imported from `github.com/hra42/openrouter-go` - modifications should be made in that separate repository.
+
+**Migrating from old local database mode:**
+If you have existing data in the old `analytics.db` file:
+1. Set up DuckLake infrastructure (PostgreSQL catalog + S3 bucket)
+2. Export old data: `duckdb analytics.db -c "COPY activity TO 'export.parquet' (FORMAT PARQUET)"`
+3. Import to DuckLake: Connect via DuckDB CLI and run `INSERT INTO activity SELECT * FROM read_parquet('export.parquet')`

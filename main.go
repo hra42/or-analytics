@@ -16,52 +16,91 @@ const defaultDBPath = "analytics.db"
 func main() {
 	// Command-line flags
 	dateFilter := flag.String("date", "", "Filter by specific date (YYYY-MM-DD format)")
-	dbPathFlag := flag.String("db", defaultDBPath, "Path to DuckDB database file")
 	verbose := flag.Bool("verbose", false, "Enable verbose logging")
-	exportPath := flag.String("export", "", "Export data to Parquet file at specified path (local or s3://)")
-	s3Endpoint := flag.String("s3-endpoint", "", "Custom S3 endpoint URL for S3-compatible services (e.g., MinIO, DigitalOcean Spaces)")
-	s3ForcePathStyle := flag.Bool("s3-path-style", false, "Use path-style S3 URLs (required for MinIO and some S3-compatible services)")
 
 	// Scheduler flags
 	schedule := flag.String("schedule", "", "Run as a scheduler with specified schedule (daily, hourly, now, or cron expression)")
 	timezone := flag.String("timezone", "UTC", "Timezone for scheduler (e.g., America/New_York, Europe/London)")
 	webhookURL := flag.String("webhook-url", "", "Webhook URL to send notifications after each scheduled run")
 
+	// DuckLake configuration
+	duckLakeDB := flag.String("db", "or_analytics", "DuckLake database name")
+	pgHost := flag.String("pg-host", "192.168.2.21", "PostgreSQL catalog host")
+	pgPort := flag.String("pg-port", "5432", "PostgreSQL catalog port")
+	pgUser := flag.String("pg-user", "admin", "PostgreSQL catalog user")
+	pgPassword := flag.String("pg-password", "", "PostgreSQL catalog password (or use PG_PASSWORD env var)")
+	pgDBName := flag.String("pg-dbname", "or_analytics_catalog", "PostgreSQL catalog database name")
+	s3Key := flag.String("s3-key", "", "S3/R2 access key ID (or use S3_KEY env var)")
+	s3Secret := flag.String("s3-secret", "", "S3/R2 secret access key (or use S3_SECRET env var)")
+	s3Endpoint := flag.String("s3-endpoint", "s3.hra42.com", "S3/R2 endpoint URL")
+	s3Bucket := flag.String("s3-bucket", "or-analytics", "S3/R2 bucket name")
+	s3Region := flag.String("s3-region", "us-east-1", "S3/R2 region")
+
 	flag.Parse()
+
+	// Get credentials from flags or environment
+	password := *pgPassword
+	if password == "" {
+		password = os.Getenv("PG_PASSWORD")
+	}
+
+	accessKey := *s3Key
+	if accessKey == "" {
+		accessKey = os.Getenv("S3_KEY")
+	}
+
+	secretKey := *s3Secret
+	if secretKey == "" {
+		secretKey = os.Getenv("S3_SECRET")
+	}
+
+	// Validate required credentials
+	if password == "" {
+		log.Fatal("PostgreSQL password required: use -pg-password flag or PG_PASSWORD env var")
+	}
+	if accessKey == "" {
+		log.Fatal("S3 access key required: use -s3-key flag or S3_KEY env var")
+	}
+	if secretKey == "" {
+		log.Fatal("S3 secret key required: use -s3-secret flag or S3_SECRET env var")
+	}
+
+	// Build DuckLake configuration
+	pgConnStr := BuildPostgresConnStr(*pgDBName, *pgHost, *pgPort, *pgUser, password)
+
+	config := &DuckLakeConfig{
+		Enabled:         true,
+		PostgresConnStr: pgConnStr,
+		DatabaseName:    *duckLakeDB,
+		S3AccessKey:     accessKey,
+		S3SecretKey:     secretKey,
+		S3Endpoint:      *s3Endpoint,
+		S3Bucket:        *s3Bucket,
+		S3Region:        *s3Region,
+	}
 
 	// Check if running in scheduler mode
 	if *schedule != "" {
-		runSchedulerMode(*schedule, *timezone, *dateFilter, *dbPathFlag, *exportPath, *s3Endpoint, *s3ForcePathStyle, *verbose, *webhookURL)
+		runSchedulerMode(*schedule, *timezone, *dateFilter, *verbose, *webhookURL, config)
 		return
 	}
 
-	// Run in one-time mode (original behavior)
-	runOnceMode(*dateFilter, *dbPathFlag, *exportPath, *s3Endpoint, *s3ForcePathStyle, *verbose)
+	// Run in one-time mode
+	runOnceMode(*dateFilter, *verbose, config)
 }
 
 // runSchedulerMode runs the application as a scheduler
-func runSchedulerMode(scheduleExpr, timezone, dateFilter, dbPath, exportPath, s3Endpoint string, s3PathStyle, verbose bool, webhookURL string) {
+func runSchedulerMode(scheduleExpr, timezone, dateFilter string, verbose bool, webhookURL string, duckLakeConfig *DuckLakeConfig) {
 	ctx := context.Background()
-
-	// Create S3 config if needed
-	var s3Config *S3Config
-	if exportPath != "" && IsS3Path(exportPath) {
-		s3Config = &S3Config{
-			EndpointURL:    s3Endpoint,
-			ForcePathStyle: s3PathStyle,
-		}
-	}
 
 	// Create scheduler config
 	config := &SchedulerConfig{
-		Schedule:   scheduleExpr,
-		DateFilter: dateFilter,
-		DBPath:     dbPath,
-		ExportPath: exportPath,
-		S3Config:   s3Config,
-		Verbose:    verbose,
-		Timezone:   timezone,
-		WebhookURL: webhookURL,
+		Schedule:       scheduleExpr,
+		DateFilter:     dateFilter,
+		Verbose:        verbose,
+		Timezone:       timezone,
+		WebhookURL:     webhookURL,
+		DuckLakeConfig: duckLakeConfig,
 	}
 
 	// Run scheduler
@@ -70,16 +109,16 @@ func runSchedulerMode(scheduleExpr, timezone, dateFilter, dbPath, exportPath, s3
 	}
 }
 
-// runOnceMode runs the application once (original behavior)
-func runOnceMode(dateFilter, dbPath, exportPath, s3Endpoint string, s3PathStyle, verbose bool) {
+// runOnceMode runs the application once
+func runOnceMode(dateFilter string, verbose bool, config *DuckLakeConfig) {
 	// Get API key from environment
 	apiKey := os.Getenv("OPENROUTER_API_KEY")
 	if apiKey == "" {
 		log.Fatal("OPENROUTER_API_KEY environment variable is required")
 	}
 
-	fmt.Println("OpenRouter Analytics - Activity Data Importer")
-	fmt.Println("==============================================")
+	fmt.Println("OpenRouter Analytics - DuckLake Incremental Importer")
+	fmt.Println("=====================================================")
 	fmt.Println()
 
 	// Create OpenRouter client
@@ -91,16 +130,17 @@ func runOnceMode(dateFilter, dbPath, exportPath, s3Endpoint string, s3PathStyle,
 
 	ctx := context.Background()
 
-	// Connect to DuckDB and initialize table
-	db, err := InitDB(dbPath)
+	// Initialize DuckLake connection (in-memory, no local persistence)
+	db, err := InitDuckLake(config)
 	if err != nil {
-		log.Fatalf("Error initializing database: %v", err)
+		log.Fatalf("Error initializing DuckLake: %v", err)
 	}
 	defer db.Close()
 
 	if verbose {
-		fmt.Println("✓ Database connection established")
-		fmt.Println("✓ Activity table ready")
+		fmt.Println("✓ DuckLake connection established (in-memory)")
+		fmt.Printf("✓ Connected to remote catalog: %s\n", config.DatabaseName)
+		fmt.Printf("✓ Data storage: s3://%s\n", config.S3Bucket)
 		fmt.Println()
 	}
 
@@ -136,72 +176,39 @@ func runOnceMode(dateFilter, dbPath, exportPath, s3Endpoint string, s3PathStyle,
 		return
 	}
 
-	// Convert and insert records
+	// Convert and append records incrementally
 	records := ConvertActivityData(activity.Data)
-	inserted := 0
 
-	// Insert in batches with progress reporting
-	for i := 0; i < len(records); i += 100 {
-		end := i + 100
-		if end > len(records) {
-			end = len(records)
-		}
-
-		batch := records[i:end]
-		count, err := InsertActivityRecords(db, batch)
-		inserted += count
-
-		if err != nil {
-			log.Printf("Warning: error inserting batch: %v", err)
-		}
-
-		if verbose && inserted%100 == 0 {
-			fmt.Printf("  Processed %d records...\n", inserted)
-		}
+	lastDate, err := GetLastDuckLakeDate(db, config.DatabaseName)
+	if err != nil {
+		log.Printf("Warning: could not get last date from DuckLake: %v", err)
 	}
 
-	fmt.Printf("✓ Successfully imported %d records\n\n", inserted)
+	if lastDate != "" && verbose {
+		fmt.Printf("Last date in DuckLake: %s\n", lastDate)
+		fmt.Println("Only importing records newer than this date...")
+	}
 
-	// Export to Parquet if requested
-	if exportPath != "" {
-		// Check if it's an S3 path
-		if IsS3Path(exportPath) {
-			// Create S3 config
-			s3Config := &S3Config{
-				EndpointURL:    s3Endpoint,
-				ForcePathStyle: s3PathStyle,
-			}
+	// Append incrementally (only new records)
+	inserted, err := AppendToDuckLake(db, config.DatabaseName, records)
+	if err != nil {
+		log.Fatalf("Error appending to DuckLake: %v", err)
+	}
 
-			// Display endpoint info if custom endpoint is used
-			if s3Endpoint != "" {
-				fmt.Printf("Using custom S3 endpoint: %s\n", s3Endpoint)
-			}
-			if s3PathStyle {
-				fmt.Printf("Using path-style S3 URLs\n")
-			}
-
-			fmt.Printf("Exporting data to S3: %s\n", exportPath)
-			if err := ExportToS3(ctx, db, exportPath, s3Config); err != nil {
-				log.Fatalf("Error exporting to S3: %v", err)
-			}
-			fmt.Printf("✓ Successfully exported to %s\n\n", exportPath)
-		} else {
-			fmt.Printf("Exporting data to Parquet file: %s\n", exportPath)
-			if err := ExportToParquet(db, exportPath); err != nil {
-				log.Fatalf("Error exporting to Parquet: %v", err)
-			}
-			fmt.Printf("✓ Successfully exported to %s\n\n", exportPath)
-		}
+	if inserted == 0 {
+		fmt.Println("No new records to append (all data already exists in DuckLake)")
+	} else {
+		fmt.Printf("✓ Successfully appended %d new records to DuckLake\n\n", inserted)
 	}
 
 	// Display summary statistics
-	summary, err := GetSummary(db)
+	summary, err := GetDuckLakeSummary(db, config.DatabaseName)
 	if err != nil {
-		log.Printf("Error getting summary: %v", err)
+		log.Printf("Error getting DuckLake summary: %v", err)
 		return
 	}
 
-	PrintSummary(summary, dbPath)
+	PrintSummary(summary, fmt.Sprintf("DuckLake: %s (s3://%s)", config.DatabaseName, config.S3Bucket))
 }
 
 // PrintSummary displays summary statistics to the console
