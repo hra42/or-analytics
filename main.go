@@ -7,8 +7,8 @@ import (
 	"log"
 	"os"
 
+	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/hra42/openrouter-go"
-	_ "github.com/marcboeker/go-duckdb"
 )
 
 const defaultDBPath = "analytics.db"
