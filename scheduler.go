@@ -16,37 +16,32 @@ import (
 
 // SchedulerConfig holds configuration for the scheduler
 type SchedulerConfig struct {
-	Schedule         string  // Cron expression or predefined schedule
-	DateFilter       string  // Optional date filter
-	DBPath           string  // Database path
-	ExportPath       string  // Optional export path
-	S3Config         *S3Config // Optional S3 configuration
-	Verbose          bool    // Verbose logging
-	Timezone         string  // Timezone for scheduling (default: UTC)
-	WebhookURL       string  // Optional webhook URL for notifications
+	Schedule       string          // Cron expression or predefined schedule
+	DateFilter     string          // Optional date filter
+	Verbose        bool            // Verbose logging
+	Timezone       string          // Timezone for scheduling (default: UTC)
+	WebhookURL     string          // Optional webhook URL for notifications
+	DuckLakeConfig *DuckLakeConfig // DuckLake configuration
 }
 
 // JobConfig holds configuration for a single job execution
 type JobConfig struct {
-	Client     *openrouter.Client
-	DB         *sql.DB
-	DateFilter string
-	ExportPath string
-	S3Config   *S3Config
-	Verbose    bool
-	WebhookURL string
+	Client         *openrouter.Client
+	DB             *sql.DB
+	DateFilter     string
+	Verbose        bool
+	WebhookURL     string
+	DuckLakeConfig *DuckLakeConfig
 }
 
 // RunScheduler starts the scheduler and runs jobs according to the schedule
 func RunScheduler(ctx context.Context, config *SchedulerConfig) error {
-	log.Printf("Starting OR Analytics Scheduler")
+	log.Printf("Starting OR Analytics DuckLake Scheduler")
 	log.Printf("Schedule: %s", config.Schedule)
-	log.Printf("Database: %s", config.DBPath)
 	log.Printf("Timezone: %s", config.Timezone)
+	log.Printf("Database: %s", config.DuckLakeConfig.DatabaseName)
+	log.Printf("Data storage: s3://%s", config.DuckLakeConfig.S3Bucket)
 
-	if config.ExportPath != "" {
-		log.Printf("Export: %s", config.ExportPath)
-	}
 	if config.WebhookURL != "" {
 		log.Printf("Webhook: %s", config.WebhookURL)
 	}
@@ -64,10 +59,10 @@ func RunScheduler(ctx context.Context, config *SchedulerConfig) error {
 		openrouter.WithAppName("OR Analytics Scheduler"),
 	)
 
-	// Connect to DuckDB and initialize table
-	db, err := InitDB(config.DBPath)
+	// Connect to DuckLake (in-memory)
+	db, err := InitDuckLake(config.DuckLakeConfig)
 	if err != nil {
-		return fmt.Errorf("failed to initialize database: %w", err)
+		return fmt.Errorf("failed to initialize DuckLake: %w", err)
 	}
 	defer db.Close()
 
@@ -90,13 +85,12 @@ func RunScheduler(ctx context.Context, config *SchedulerConfig) error {
 
 	// Job configuration
 	jobConfig := &JobConfig{
-		Client:     client,
-		DB:         db,
-		DateFilter: config.DateFilter,
-		ExportPath: config.ExportPath,
-		S3Config:   config.S3Config,
-		Verbose:    config.Verbose,
-		WebhookURL: config.WebhookURL,
+		Client:         client,
+		DB:             db,
+		DateFilter:     config.DateFilter,
+		Verbose:        config.Verbose,
+		WebhookURL:     config.WebhookURL,
+		DuckLakeConfig: config.DuckLakeConfig,
 	}
 
 	// Define the job function
@@ -207,55 +201,30 @@ func runImportJob(ctx context.Context, config *JobConfig) error {
 		return nil
 	}
 
-	// Convert and insert records
+	// Convert and append records incrementally
 	records := ConvertActivityData(activity.Data)
-	inserted := 0
 
-	// Insert in batches
-	for i := 0; i < len(records); i += 100 {
-		end := i + 100
-		if end > len(records) {
-			end = len(records)
-		}
-
-		batch := records[i:end]
-		count, err := InsertActivityRecords(config.DB, batch)
-		inserted += count
-
-		if err != nil {
-			log.Printf("Warning: error inserting batch: %v", err)
-		}
-
-		if config.Verbose && inserted%100 == 0 {
-			log.Printf("  Processed %d records...", inserted)
-		}
+	lastDate, err := GetLastDuckLakeDate(config.DB, config.DuckLakeConfig.DatabaseName)
+	if err != nil {
+		log.Printf("Warning: could not get last date from DuckLake: %v", err)
 	}
 
-	log.Printf("Successfully imported %d records", inserted)
+	if lastDate != "" && config.Verbose {
+		log.Printf("Last date in DuckLake: %s", lastDate)
+		log.Println("Only importing records newer than this date...")
+	}
 
-	// Export to Parquet if requested
-	if config.ExportPath != "" {
-		if IsS3Path(config.ExportPath) {
-			if config.Verbose {
-				log.Printf("Exporting data to S3: %s", config.ExportPath)
-			}
-			if err := ExportToS3(ctx, config.DB, config.ExportPath, config.S3Config); err != nil {
-				jobError = fmt.Errorf("failed to export to S3: %w", err)
-				sendErrorWebhook(ctx, config, startTime, inserted, jobError)
-				return jobError
-			}
-			log.Printf("Successfully exported to %s", config.ExportPath)
-		} else {
-			if config.Verbose {
-				log.Printf("Exporting data to Parquet file: %s", config.ExportPath)
-			}
-			if err := ExportToParquet(config.DB, config.ExportPath); err != nil {
-				jobError = fmt.Errorf("failed to export to Parquet: %w", err)
-				sendErrorWebhook(ctx, config, startTime, inserted, jobError)
-				return jobError
-			}
-			log.Printf("Successfully exported to %s", config.ExportPath)
-		}
+	inserted, err := AppendToDuckLake(config.DB, config.DuckLakeConfig.DatabaseName, records)
+	if err != nil {
+		jobError = fmt.Errorf("failed to append to DuckLake: %w", err)
+		sendErrorWebhook(ctx, config, startTime, 0, jobError)
+		return jobError
+	}
+
+	if inserted == 0 {
+		log.Println("No new records to append (all data already exists in DuckLake)")
+	} else {
+		log.Printf("Successfully appended %d new records to DuckLake", inserted)
 	}
 
 	duration := time.Since(startTime)
