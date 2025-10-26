@@ -40,9 +40,9 @@ RUN apt-get update && \
     libstdc++6 && \
     rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
+# Create non-root user with home directory
 RUN groupadd -g 1000 analytics && \
-    useradd -r -u 1000 -g analytics analytics
+    useradd -r -u 1000 -g analytics -m -d /home/analytics analytics
 
 # Set working directory
 WORKDIR /app
@@ -50,9 +50,9 @@ WORKDIR /app
 # Copy binary from builder
 COPY --from=builder /build/or-analytics /app/or-analytics
 
-# Create directory for database and set permissions
-RUN mkdir -p /app/data && \
-    chown -R analytics:analytics /app
+# Create directories and set permissions
+RUN mkdir -p /app/data /home/analytics/.duckdb && \
+    chown -R analytics:analytics /app /home/analytics
 
 # Switch to non-root user
 USER analytics
