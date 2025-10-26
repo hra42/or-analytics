@@ -87,9 +87,9 @@ docker-compose --profile scheduler up -d or-analytics-scheduler
 # View logs
 docker-compose logs -f or-analytics-scheduler
 ```
-```
 
 ### Testing
+
 ```bash
 # Run all tests
 go test -v
@@ -101,7 +101,7 @@ go test -v -cover -coverprofile=coverage.out
 go test -v -race
 
 # Run specific test
-go test -v -run TestInsertActivityRecords
+go test -v -run TestBuildPostgresConnStr
 ```
 
 ### Building
@@ -175,25 +175,29 @@ SELECT * FROM activity AS OF TIMESTAMP '2025-10-01 00:00:00';
 ### File Structure
 The codebase follows a flat structure with clear separation of concerns:
 
-- **main.go** - CLI entry point, mode selection (one-time vs scheduler)
+- **main.go** - CLI entry point, mode selection (one-time vs scheduler), DuckLake config
 - **scheduler.go** - Built-in scheduler using gocron/v2
-- **db.go** - Database operations (schema, upsert, queries, Parquet export)
-- **s3.go** - S3 operations (upload, download, URI parsing)
-- **processor.go** - Data transformation (API response → database records)
+- **ducklake.go** - DuckLake operations (connect, incremental append, queries)
+- **processor.go** - Data transformation (API response → ActivityRecord format)
+- **webhook.go** - Webhook notification handler
 - **\*_test.go** - Comprehensive unit tests for each module
 - **Dockerfile** - Multi-stage build for optimized container images
 - **docker-compose.yml** - Docker Compose configuration with profiles
 - **.dockerignore** - Excludes unnecessary files from Docker build context
 
 ### Data Flow
-1. **Fetch**: `main.go` uses `openrouter-go` client to fetch activity data from OpenRouter API
+
+1. **Fetch**: `main.go` uses `openrouter-go` client to fetch last 30 days of activity from OpenRouter API
 2. **Transform**: `processor.go` converts API response (`openrouter.ActivityData`) to internal `ActivityRecord` format
-3. **Store**: `db.go` upserts records into DuckDB using batch transactions (100 records per batch)
-4. **Export** (optional): `db.go` exports to local Parquet, or `s3.go` uploads to S3
-5. **Display**: `main.go` queries summary statistics and prints to console
+3. **Check Last Date**: `ducklake.go` queries `MAX(date)` from DuckLake to determine what data already exists
+4. **Filter**: Only records newer than the last stored date are selected for append
+5. **Append**: `ducklake.go` performs incremental INSERT into DuckLake (creates new snapshot automatically)
+6. **Persist**: DuckLake writes Parquet files to S3 and updates PostgreSQL catalog
+7. **Display**: `main.go` queries summary statistics from DuckLake and prints to console
 
 ### Database Schema
-The `activity` table uses a composite primary key `(date, model, provider_name)` to ensure uniqueness. All upserts use `ON CONFLICT DO UPDATE` to handle duplicate imports gracefully.
+
+The `activity` table in DuckLake uses a composite primary key `(date, model, provider_name)` to ensure uniqueness.
 
 ```sql
 CREATE TABLE activity (
@@ -258,38 +262,41 @@ For Docker builds, configure these secrets in Woodpecker CI:
 
 ## Testing Notes
 
-Tests use in-memory DuckDB databases (`:memory:`) for isolation. Key test coverage:
-- Schema validation and table creation
-- Upsert behavior with duplicates
-- Primary key constraint enforcement
-- NULL value handling in summaries
+Tests use helper functions and configuration validation. Key test coverage:
+- PostgreSQL connection string building
+- DuckLake configuration structure
 - Date normalization
-- Timestamp auto-generation
-- Parquet export (local files)
-- S3 URI parsing and validation
+- Data transformation (API → ActivityRecord)
+- Webhook payload generation
 
-**Note:** Full S3 integration tests require AWS credentials and are better suited for CI/CD environments. Unit tests validate URI parsing and error handling without requiring actual S3 access.
+**Note:** Full DuckLake integration tests require:
+- Running PostgreSQL instance for catalog
+- S3/R2 credentials and bucket access
+- DuckLake extensions installed in DuckDB
+
+These are better suited for CI/CD or manual testing environments with proper credentials configured.
 
 ## S3-Compatible Services
 
-The application supports any S3-compatible object storage service through the `-s3-endpoint` and `-s3-path-style` flags:
+The application supports any S3-compatible object storage service:
 
 **Supported Services:**
-- **AWS S3** - Default, no additional flags needed
-- **MinIO** - Use `-s3-endpoint` and `-s3-path-style`
-- **DigitalOcean Spaces** - Use `-s3-endpoint`
-- **Cloudflare R2** - Use `-s3-endpoint`
-- **Backblaze B2** - Use `-s3-endpoint`
-- **Wasabi** - Use `-s3-endpoint`
+- **AWS S3** - Default
+- **Cloudflare R2** - Use custom `-s3-endpoint`
+- **MinIO** - Use custom `-s3-endpoint`
+- **DigitalOcean Spaces** - Use custom `-s3-endpoint`
+- **Backblaze B2** - Use custom `-s3-endpoint`
+- **Wasabi** - Use custom `-s3-endpoint`
 
 **Configuration:**
-- `S3Config` struct in `s3.go:50-54` holds endpoint and path-style settings
-- Custom endpoints are applied via AWS SDK v2's `BaseEndpoint` option
-- Path-style addressing (bucket.s3.com vs s3.com/bucket) is controlled via `UsePathStyle` option
+- `DuckLakeConfig` struct in `ducklake.go:35-45` holds all S3 settings
+- Credentials passed to DuckDB via `CREATE SECRET` SQL command
+- Endpoint, bucket, and region are configurable via CLI flags or environment variables
 
 ## Docker Deployment
 
 ### Dockerfile Design
+
 The project uses a **multi-stage build** for optimal image size and security:
 
 **Stage 1: Builder**
