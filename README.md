@@ -1,778 +1,281 @@
 # OR Analytics
 
-OpenRouter Analytics Engine - Fetch and analyze your OpenRouter API usage data using DuckDB.
+A cloud-native analytics solution for OpenRouter API usage data using **DuckLake** for incremental, versioned data storage.
 
 ## Overview
 
-OR Analytics is a lightweight tool that fetches activity data from OpenRouter's Activity API and stores it in a local DuckDB database for analysis. Track your API usage, costs, token consumption, and model performance over time.
+OR Analytics fetches activity data from the OpenRouter API and stores it incrementally in DuckLake - a lakehouse format that combines the benefits of data lakes and warehouses. Data is stored in S3-compatible object storage with automatic versioning and time travel capabilities.
 
-## Features
+**Key Features:**
+- ✅ **Incremental Appends**: Only new data is written daily (no rewrites)
+- ✅ **No Local Storage**: Uses in-memory DuckDB (stateless, no single point of failure)
+- ✅ **Cloud-Native**: All data persisted in S3/R2 via DuckLake
+- ✅ **Version Control**: Automatic snapshots for time travel queries
+- ✅ **Built-in Scheduler**: Run as a daily cron job or custom schedule
 
-- 📊 Fetch activity data from OpenRouter API (last 30 days)
-- 💾 Store data in efficient DuckDB database
-- 🔍 Filter by specific dates
-- 📈 Built-in summary statistics
-- 🔄 Upsert logic to prevent duplicates
-- 📝 Example SQL queries for common analyses
-- 📦 Export data to Parquet format (local or S3)
-- ☁️ Direct S3 upload support (AWS S3, MinIO, DigitalOcean Spaces, Cloudflare R2, etc.)
-- ⏰ Built-in scheduler with timezone support (daily, hourly, custom cron)
-- 🔔 Webhook notifications with comprehensive metrics
-- 🐳 Docker support with optimized multi-stage builds
-- ⚡ Fast and lightweight
+## Architecture
+
+```
+OpenRouter API → DuckDB (in-memory) → DuckLake → PostgreSQL Catalog + S3/R2 Storage
+```
+
+1. **Fetch**: Retrieve last 30 days of activity from OpenRouter
+2. **Filter**: Only select records newer than the last stored date
+3. **Append**: Write new records to DuckLake (creates new snapshot)
+4. **Persist**: Data automatically saved to S3, metadata in PostgreSQL
 
 ## Prerequisites
 
-**For Docker (Recommended):**
-- Docker and Docker Compose
-- OpenRouter provisioning key (not a regular API key!)
-  - Create one at: https://openrouter.ai/settings/provisioning-keys
+- Go 1.25.1+
+- OpenRouter **provisioning key** (not regular API key): https://openrouter.ai/settings/provisioning-keys
+- PostgreSQL instance for DuckLake catalog
+- S3-compatible object storage (AWS S3, Cloudflare R2, MinIO, etc.)
 
-**For Native Installation:**
-- Go 1.25.1 or higher
-- OpenRouter provisioning key (not a regular API key!)
-  - Create one at: https://openrouter.ai/settings/provisioning-keys
-- DuckDB CLI (optional, for running queries)
+## Quick Start
 
-**Optional (for S3 export):**
-- AWS credentials (or compatible service credentials)
-  - Configure via `~/.aws/credentials` or environment variables
-  - Required environment variables: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`
+### 1. Set up DuckLake Infrastructure
 
-## Installation
-
-### Quick Start with Docker (Recommended)
-
-The fastest way to get started:
-
-```bash
-# Clone the repository
-git clone https://github.com/hra42/or-analytics.git
-cd or-analytics
-
-# Set up environment
-cp .env.example .env
-# Edit .env and add your OPENROUTER_API_KEY
-
-# Create data directory
-mkdir -p data
-
-# Run with Docker Compose
-docker-compose run --rm or-analytics
-```
-
-That's it! Your analytics data is now in `./data/analytics.db`.
-
-### Native Installation
-
-For development or if you prefer running natively:
-
-1. Clone the repository:
-```bash
-git clone https://github.com/hra42/or-analytics.git
-cd or-analytics
-```
-
-2. Install dependencies:
-```bash
-go mod download
-```
-
-3. Set up your environment:
-```bash
-cp .env.example .env
-# Edit .env and add your OpenRouter provisioning key
-export OPENROUTER_API_KEY=your_provisioning_key_here
-```
-
-## Usage
-
-### Basic Usage
-
-Fetch all activity data (last 30 completed UTC days):
-```bash
-go run main.go
-```
-
-### Command-Line Options
-
-```bash
-# Filter by specific date
-go run main.go -date 2025-10-08
-
-# Use custom database path
-go run main.go -db /path/to/custom.db
-
-# Enable verbose logging
-go run main.go -verbose
-
-# Export data to local Parquet file
-go run main.go -export activity.parquet
-
-# Export data directly to AWS S3
-go run main.go -export s3://my-bucket/analytics/activity.parquet
-
-# Export to S3-compatible service (MinIO)
-go run main.go -export s3://my-bucket/data.parquet \
-  -s3-endpoint https://minio.example.com:9000 \
-  -s3-path-style
-
-# Combine options
-go run main.go -date 2025-10-08 -db custom.db -verbose -export s3://my-bucket/data.parquet
-```
-
-**Available Flags:**
-- `-date` - Filter by specific date (YYYY-MM-DD format)
-- `-db` - Path to DuckDB database file (default: analytics.db)
-- `-verbose` - Enable verbose logging
-- `-export` - Export data to Parquet file (local path or s3:// URI)
-- `-s3-endpoint` - Custom S3 endpoint URL for S3-compatible services
-- `-s3-path-style` - Use path-style S3 URLs (required for MinIO and some providers)
-- `-schedule` - Run as a scheduler with specified schedule (daily, hourly, now, or cron expression)
-- `-timezone` - Timezone for scheduler (default: UTC)
-- `-webhook-url` - Webhook URL to send notifications after each scheduled run
-
-### Example Output
-
-```
-OpenRouter Analytics - Activity Data Importer
-==============================================
-
-Fetching all activity data (last 30 completed UTC days)
-Retrieved 185 activity records
-✓ Successfully imported 185 records
-
-Database Summary
-================
-Total records in database: 185
-Date range: 30 unique dates
-Models used: 19 unique models
-Providers: 16 unique providers
-
-Total API requests: 2706
-Total usage cost: $3.9100
-Total tokens:
-  Prompt: 16786827
-  Completion: 1314629
-  Reasoning: 575490
-
-Database saved to: analytics.db
-```
-
-## Database Schema
-
-The `activity` table has the following structure:
+First, configure your DuckLake catalog and storage:
 
 ```sql
-CREATE TABLE activity (
-    date DATE,
-    model VARCHAR,
-    provider_name VARCHAR,
-    requests DOUBLE,
-    usage DOUBLE,
-    prompt_tokens DOUBLE,
-    completion_tokens DOUBLE,
-    reasoning_tokens DOUBLE,
-    byok_usage_inference DOUBLE,
-    created_at TIMESTAMP DEFAULT now(),
-    PRIMARY KEY (date, model, provider_name)
-);
+-- In your PostgreSQL instance
+CREATE DATABASE or_analytics_catalog;
 ```
 
-## Analyzing Data
+Your S3/R2 bucket should be created and accessible with access keys.
 
-### Using SQL Queries
-
-The `queries/` directory contains example SQL queries. Run them using DuckDB CLI:
+### 2. Configure Environment Variables
 
 ```bash
-# Install DuckDB CLI (macOS)
-brew install duckdb
+# Required: OpenRouter API key
+export OPENROUTER_API_KEY="sk-or-v1-..."
 
-# Run a query
-duckdb analytics.db < queries/01_summary_stats.sql
+# Required: PostgreSQL catalog credentials
+export PG_PASSWORD="your-postgres-password"
 
-# Interactive mode
-duckdb analytics.db
-D SELECT * FROM activity LIMIT 5;
+# Required: S3/R2 credentials
+export S3_KEY="your-s3-access-key"
+export S3_SECRET="your-s3-secret-key"
 ```
 
-### Example Queries
+### 3. Run One-Time Import
 
-- `01_summary_stats.sql` - Overall statistics
-- `02_top_models_by_spend.sql` - Most expensive models
-- `03_provider_distribution.sql` - Provider cost breakdown
-- `04_daily_spend_trend.sql` - Daily spending trends
-- `05_model_provider_breakdown.sql` - Model-provider combinations
-- `06_recent_activity.sql` - Last 7 days activity
-- `07_cost_efficiency.sql` - Cost per 1K tokens
-- `08_weekly_summary.sql` - Weekly spending summary
-
-See [queries/README.md](queries/README.md) for more details.
-
-### Exporting Data
-
-You can export your data in multiple formats:
-
-#### Using the built-in export flag (recommended)
-
-**Local Parquet files:**
 ```bash
-# Export to local Parquet file during import
-go run main.go -export activity.parquet
+# Basic import (uses default configuration)
+go run main.go
 
-# Export specific date range
-go run main.go -date 2025-10-08 -export oct08_activity.parquet
+# With custom configuration
+go run main.go \
+  -db my_analytics \
+  -pg-host 192.168.2.21 \
+  -pg-port 5432 \
+  -s3-endpoint s3.hra42.com \
+  -s3-bucket my-analytics \
+  -verbose
 ```
 
-**Direct S3 upload:**
+### 4. Run as Scheduler
+
 ```bash
-# Export directly to AWS S3 (requires AWS credentials)
-# The current date (YYYYMMDD) is automatically appended to the filename
-go run main.go -export s3://my-bucket/analytics/activity.parquet
-# Results in: s3://my-bucket/analytics/activity-20251012.parquet
-
-# Export specific date to S3
-go run main.go -date 2025-10-08 -export s3://my-bucket/daily/data.parquet
-# Results in: s3://my-bucket/daily/data-20251012.parquet
-```
-
-**Note:** When exporting to S3, the current date (in YYYYMMDD format) is automatically inserted before the file extension. For example:
-- `s3://bucket/file.parquet` → `s3://bucket/file-20251012.parquet`
-- `s3://bucket/path/data.parquet` → `s3://bucket/path/data-20251012.parquet`
-
-This ensures each export has a unique filename and makes it easy to track when data was exported.
-
-**S3-Compatible Providers (MinIO, DigitalOcean Spaces, Cloudflare R2, etc.):**
-```bash
-# MinIO
-go run main.go -export s3://my-bucket/data.parquet \
-  -s3-endpoint https://minio.example.com:9000 \
-  -s3-path-style
-
-# DigitalOcean Spaces
-go run main.go -export s3://my-space/analytics/data.parquet \
-  -s3-endpoint https://nyc3.digitaloceanspaces.com
-
-# Cloudflare R2
-go run main.go -export s3://my-bucket/data.parquet \
-  -s3-endpoint https://[account-id].r2.cloudflarestorage.com
-
-# Backblaze B2
-go run main.go -export s3://my-bucket/data.parquet \
-  -s3-endpoint https://s3.us-west-001.backblazeb2.com
-
-# Wasabi
-go run main.go -export s3://my-bucket/data.parquet \
-  -s3-endpoint https://s3.wasabisys.com
-```
-
-**AWS Credentials Setup:**
-```bash
-# Option 1: Environment variables
-export AWS_ACCESS_KEY_ID=your_access_key
-export AWS_SECRET_ACCESS_KEY=your_secret_key
-export AWS_REGION=us-east-1
-
-# Option 2: AWS credentials file (~/.aws/credentials)
-[default]
-aws_access_key_id = your_access_key
-aws_secret_access_key = your_secret_key
-region = us-east-1
-```
-
-#### Using DuckDB CLI
-
-Export to CSV:
-```bash
-duckdb analytics.db "COPY (SELECT * FROM activity) TO 'export.csv' (HEADER, DELIMITER ',');"
-```
-
-Export to Parquet:
-```bash
-duckdb analytics.db "COPY (SELECT * FROM activity) TO 'export.parquet' (FORMAT PARQUET);"
-```
-
-Export filtered data:
-```bash
-duckdb analytics.db "COPY (SELECT * FROM activity WHERE date >= '2025-10-01') TO 'october.parquet' (FORMAT PARQUET);"
-```
-
-## Scheduler (Built-in)
-
-The application includes a built-in scheduler that eliminates the need for external cron jobs. The scheduler runs continuously and executes imports on a defined schedule.
-
-### Usage
-
-**Daily at midnight (default):**
-```bash
-# Run scheduler
+# Daily at midnight (UTC)
 go run main.go -schedule daily
 
-# With export to S3 (date is automatically added to filename)
-go run main.go -schedule daily -export s3://my-bucket/analytics.parquet
-# Each run creates: s3://my-bucket/analytics-YYYYMMDD.parquet
+# Custom schedule (2 AM EST)
+go run main.go -schedule "0 2 * * *" -timezone America/New_York
 
-# With custom timezone
-go run main.go -schedule daily -timezone America/New_York
-```
-
-**Hourly:**
-```bash
-go run main.go -schedule hourly -verbose
-```
-
-**Custom cron expression:**
-```bash
-# Every day at 2 AM
-go run main.go -schedule "0 2 * * *"
-
-# Every 6 hours
-go run main.go -schedule "0 */6 * * *"
-
-# Monday-Friday at 9 AM
-go run main.go -schedule "0 9 * * 1-5"
-```
-
-**Run now and schedule:**
-```bash
-# Run immediately, then daily at midnight
+# Run now, then schedule daily
 go run main.go -schedule now
+
+# With webhook notifications
+go run main.go -schedule daily -webhook-url https://hooks.example.com/analytics
 ```
 
-### Docker Scheduler
+## Configuration Flags
 
-Run the scheduler as a long-running container:
+### Required (via flags or env vars)
+- `-pg-password` / `PG_PASSWORD` - PostgreSQL catalog password
+- `-s3-key` / `S3_KEY` - S3/R2 access key ID
+- `-s3-secret` / `S3_SECRET` - S3/R2 secret access key
+
+### Database & Catalog
+- `-db` - DuckLake database name (default: `or_analytics`)
+- `-pg-host` - PostgreSQL host (default: `192.168.2.21`)
+- `-pg-port` - PostgreSQL port (default: `5432`)
+- `-pg-user` - PostgreSQL user (default: `admin`)
+- `-pg-dbname` - PostgreSQL catalog database (default: `or_analytics_catalog`)
+
+### S3 Storage
+- `-s3-endpoint` - S3/R2 endpoint URL (default: `s3.hra42.com`)
+- `-s3-bucket` - S3/R2 bucket name (default: `or-analytics`)
+- `-s3-region` - S3/R2 region (default: `us-east-1`)
+
+### Scheduler
+- `-schedule` - Schedule mode: `daily`, `hourly`, `now`, or cron expression
+- `-timezone` - Timezone for scheduler (default: `UTC`)
+- `-webhook-url` - Webhook URL for notifications
+- `-date` - Filter by specific date (YYYY-MM-DD)
+- `-verbose` - Enable verbose logging
+
+## Docker Deployment
+
+### Build Image
 
 ```bash
-# Basic scheduler (daily at midnight UTC)
-docker-compose --profile scheduler up -d or-analytics-scheduler
-
-# With S3 export
-docker-compose --profile scheduler-s3 up -d or-analytics-scheduler-s3
-
-# View logs
-docker-compose logs -f or-analytics-scheduler
-
-# Stop scheduler
-docker-compose stop or-analytics-scheduler
-```
-
-### Scheduler Benefits
-
-- ✅ **No external dependencies**: No need for cron, systemd timers, or Kubernetes CronJobs
-- ✅ **Timezone support**: Run schedules in any timezone
-- ✅ **Flexible scheduling**: Daily, hourly, or custom cron expressions
-- ✅ **Self-contained**: Everything runs in one process
-- ✅ **Docker-friendly**: Runs as a long-running container with restart policies
-- ✅ **Graceful shutdown**: Handles SIGTERM and SIGINT properly
-- ✅ **Webhook notifications**: Send metrics to external services after each run
-
-### Webhook Notifications
-
-The scheduler can send webhook notifications after each run with comprehensive metrics about the import job. This is useful for monitoring, alerting, and integrating with workflow automation tools like n8n, Zapier, or Make.
-
-**Enable webhook notifications:**
-```bash
-# Basic webhook
-go run main.go -schedule daily -webhook-url https://your-webhook-url.com/endpoint
-
-# With S3 export
-go run main.go -schedule daily \
-  -export s3://my-bucket/analytics.parquet \
-  -webhook-url https://n8n.example.com/webhook/or-analytics
-
-# With verbose logging
-go run main.go -schedule daily -webhook-url https://hooks.example.com/notify -verbose
-```
-
-**Docker with webhook:**
-```bash
-# Set webhook URL in environment
-docker-compose --profile scheduler up -d or-analytics-scheduler \
-  -e WEBHOOK_URL=https://n8n.example.com/webhook/or-analytics
-```
-
-**Webhook payload format:**
-
-The webhook receives a JSON payload with the following structure:
-
-```json
-{
-  "timestamp": "2025-10-12T10:30:00Z",
-  "total_records": 185,
-  "unique_dates": 30,
-  "unique_models": 19,
-  "unique_providers": 16,
-  "date_range_start": "2025-09-12",
-  "date_range_end": "2025-10-12",
-  "total_requests": 2706,
-  "total_usage": 3.91,
-  "records_imported": 10,
-  "job_duration": "5s",
-  "job_status": "success"
-}
-```
-
-**On error, additional fields are included:**
-
-```json
-{
-  "timestamp": "2025-10-12T10:30:00Z",
-  "job_status": "error",
-  "job_duration": "2s",
-  "error_message": "failed to get activity: connection timeout",
-  "records_imported": 0
-}
-```
-
-**Field descriptions:**
-- `timestamp` - ISO 8601 timestamp when the webhook was sent (UTC)
-- `total_records` - Total number of records in the database
-- `unique_dates` - Number of unique dates in the database
-- `unique_models` - Number of unique models tracked
-- `unique_providers` - Number of unique providers tracked
-- `date_range_start` - Earliest date in the database (YYYY-MM-DD)
-- `date_range_end` - Latest date in the database (YYYY-MM-DD)
-- `total_requests` - Total API requests across all records
-- `total_usage` - Total usage cost in dollars
-- `records_imported` - Number of new records imported in this job
-- `job_duration` - How long the import job took
-- `job_status` - Either "success" or "error"
-- `error_message` - Error description (only present when status is "error")
-
-**Use cases:**
-- Monitor job completion in real-time
-- Alert on failures via Discord, Slack, or email
-- Trigger downstream workflows (e.g., run analysis pipelines)
-- Track usage trends and costs
-- Log metrics to external monitoring systems
-
-## Automation (External Cron)
-
-Alternatively, you can use external scheduling tools to run the tool periodically:
-
-### Using cron (Linux/macOS)
-
-**Basic daily import:**
-```bash
-# Edit crontab
-crontab -e
-
-# Add entry to run daily at 2 AM
-0 2 * * * cd /path/to/or-analytics && /usr/local/go/bin/go run main.go >> logs/import.log 2>&1
-```
-
-**Daily import with S3 backup:**
-```bash
-# Edit crontab
-crontab -e
-
-# Run daily at 2 AM and upload to S3
-0 2 * * * cd /path/to/or-analytics && /usr/local/go/bin/go run main.go -export s3://my-bucket/backups/$(date +\%Y-\%m-\%d).parquet >> logs/import.log 2>&1
-```
-
-**With Docker:**
-```bash
-# Edit crontab
-crontab -e
-
-# Run daily at 2 AM using Docker
-0 2 * * * cd /path/to/or-analytics && docker-compose run --rm or-analytics -export s3://my-bucket/backups/analytics-$(date +\%Y-\%m-\%d).parquet >> logs/import.log 2>&1
-```
-
-### Using systemd timer (Linux)
-
-Create `/etc/systemd/system/or-analytics.service`:
-```ini
-[Unit]
-Description=OpenRouter Analytics Import
-
-[Service]
-Type=oneshot
-WorkingDirectory=/path/to/or-analytics
-Environment="OPENROUTER_API_KEY=your_key_here"
-ExecStart=/usr/local/go/bin/go run main.go
-```
-
-Create `/etc/systemd/system/or-analytics.timer`:
-```ini
-[Unit]
-Description=OpenRouter Analytics Timer
-
-[Timer]
-OnCalendar=daily
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-```
-
-Enable and start:
-```bash
-sudo systemctl enable or-analytics.timer
-sudo systemctl start or-analytics.timer
-```
-
-### Using Kubernetes CronJob
-
-For Kubernetes deployments:
-
-```yaml
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: or-analytics
-spec:
-  schedule: "0 2 * * *"  # Daily at 2 AM
-  jobTemplate:
-    spec:
-      template:
-        spec:
-          containers:
-          - name: or-analytics
-            image: or-analytics:latest
-            env:
-            - name: OPENROUTER_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: or-analytics-secrets
-                  key: openrouter-api-key
-            - name: AWS_ACCESS_KEY_ID
-              valueFrom:
-                secretKeyRef:
-                  name: aws-credentials
-                  key: access-key-id
-            - name: AWS_SECRET_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: aws-credentials
-                  key: secret-access-key
-            - name: AWS_REGION
-              value: "us-east-1"
-            args:
-            - "-export"
-            - "s3://my-bucket/analytics/data.parquet"
-            volumeMounts:
-            - name: data
-              mountPath: /app/data
-          restartPolicy: OnFailure
-          volumes:
-          - name: data
-            persistentVolumeClaim:
-              claimName: or-analytics-data
-```
-
-## Testing
-
-Run the test suite:
-
-```bash
-# Run all tests
-go test -v
-
-# Run tests with coverage
-go test -v -cover
-
-# Run tests with race detection
-go test -v -race
-```
-
-The project includes comprehensive unit tests covering:
-- Database schema validation
-- Upsert functionality
-- Summary query accuracy
-- Primary key constraints
-- Date parsing
-- NULL value handling
-- Timestamp creation
-
-## Building
-
-### Native Binary
-
-Build a standalone binary:
-
-```bash
-go build -o or-analytics
-
-# Run the binary
-./or-analytics
-```
-
-### Docker
-
-Build and run with Docker:
-
-```bash
-# Build the Docker image
 docker build -t or-analytics .
+```
 
-# Run with Docker
+### Run One-Time
+
+```bash
 docker run --rm \
-  -e OPENROUTER_API_KEY=your_key_here \
-  -v $(pwd)/data:/app/data \
+  -e OPENROUTER_API_KEY=sk-or-v1-... \
+  -e PG_PASSWORD=... \
+  -e S3_KEY=... \
+  -e S3_SECRET=... \
   or-analytics
+```
 
-# Run with specific options
-docker run --rm \
-  -e OPENROUTER_API_KEY=your_key_here \
-  -v $(pwd)/data:/app/data \
-  or-analytics -date 2025-10-08 -verbose
+### Run as Scheduler
+
+```bash
+docker run -d \
+  --name or-analytics-scheduler \
+  -e OPENROUTER_API_KEY=sk-or-v1-... \
+  -e PG_PASSWORD=... \
+  -e S3_KEY=... \
+  -e S3_SECRET=... \
+  or-analytics -schedule daily -verbose
 ```
 
 ### Docker Compose
 
-The easiest way to run with Docker:
-
 ```bash
-# Copy environment file
-cp .env.example .env
-# Edit .env and add your OPENROUTER_API_KEY
+# Start scheduler
+docker-compose --profile scheduler up -d
 
-# Run once
-docker-compose run --rm or-analytics
-
-# Run with custom options
-docker-compose run --rm or-analytics -date 2025-10-08 -verbose
-
-# Export to S3
-docker-compose run --rm or-analytics \
-  -export s3://my-bucket/analytics.parquet
-
-# Export to MinIO (uses profile)
-docker-compose run --rm or-analytics-minio
+# View logs
+docker-compose logs -f or-analytics-scheduler
 ```
 
-**Docker Compose Profiles:**
-- Default: Basic import without export
-- `scheduled`: Automated S3 backup
-- `minio`: Export to MinIO-compatible storage
+## Querying Data
 
-```bash
-# Create data directory for persistence
-mkdir -p data
+Connect to your DuckLake database from any DuckDB client:
 
-# Run default service
-docker-compose run --rm or-analytics
+```sql
+-- Install extensions
+INSTALL ducklake;
+INSTALL postgres;
+INSTALL httpfs;
+INSTALL aws;
 
-# Run with scheduled profile
-docker-compose --profile scheduled run --rm or-analytics-scheduled
+-- Configure credentials
+CREATE SECRET s3_bucket (
+    TYPE S3,
+    KEY_ID 'your-key',
+    SECRET 'your-secret',
+    REGION 'us-east-1',
+    ENDPOINT 's3.hra42.com',
+    USE_SSL true,
+    URL_STYLE 'path'
+);
 
-# Run with MinIO profile
-docker-compose --profile minio run --rm or-analytics-minio
+-- Attach database
+ATTACH 'ducklake:postgres:dbname=or_analytics_catalog host=192.168.2.21 port=5432 user=admin password=...'
+AS or_analytics (DATA_PATH 's3://or-analytics');
+
+USE or_analytics;
+
+-- Query your data
+SELECT
+    date,
+    model,
+    SUM(requests) as total_requests,
+    SUM(usage) as total_cost
+FROM activity
+WHERE date >= current_date - 7
+GROUP BY date, model
+ORDER BY date DESC, total_cost DESC;
 ```
 
-## CI/CD
+### Time Travel
 
-The project uses Woodpecker CI for automated testing, building, and deployment.
+DuckLake automatically creates snapshots, allowing you to query historical data:
 
-### Pipeline Triggers
+```sql
+-- Query data as it was at a specific timestamp
+SELECT * FROM activity AS OF TIMESTAMP '2025-10-01 00:00:00';
 
-The pipeline runs automatically on:
-- **Push to main**: Runs tests, builds binaries, uploads to S3, builds and pushes Docker images
-- **Pull requests**: Runs tests and dry-run Docker builds
-- **Tags**: Builds and pushes Docker images with version tags
-- **Manual triggers**: All steps can be triggered manually from the Woodpecker UI
-
-### Automated Steps
-
-1. **Testing**: Runs Go tests with race detection and coverage
-2. **Binary Builds**: Builds for linux/amd64 and linux/arm64
-3. **S3 Upload**: Uploads binaries to S3 (main branch and manual triggers)
-4. **Docker Images**: Builds multi-platform Docker images (linux/amd64, linux/arm64)
-5. **Notifications**: Sends webhook notifications with build status and details
-
-### Required Secrets
-
-Configure these secrets in Woodpecker:
-- `s3_bucket`: S3 bucket name for binary uploads
-- `s3_access_key`: S3 access key
-- `s3_secret_key`: S3 secret key
-- `s3_region`: S3 region
-- `s3_endpoint`: S3 endpoint URL
-- `webhook_url`: Webhook URL for build notifications (e.g., n8n instance)
-
-**Note**: Docker images are pushed to `registry.hra42.com/or-analytics` with no authentication required. If you need to use a different registry or require authentication, modify the `repo` setting in the docker-buildx steps and add `username` and `password` settings.
-
-## Common Use Cases
-
-### Cost Analysis
-Track spending trends and identify expensive models or providers.
-
-### Usage Monitoring
-Monitor API usage patterns and optimize based on actual consumption.
-
-### Budget Tracking
-Set up alerts or reports based on spending thresholds.
-
-### Model Comparison
-Compare different models' performance and cost efficiency.
-
-### Provider Analysis
-Understand which providers you're using most and their costs.
-
-## Troubleshooting
-
-### "OPENROUTER_API_KEY environment variable is required"
-Make sure you've exported the environment variable or set it in your shell.
-
-### "This endpoint requires a provisioning key"
-You need a provisioning key, not a regular inference API key. Create one at:
-https://openrouter.ai/settings/provisioning-keys
-
-### No activity data found
-This is normal for new accounts or if you haven't used the API in the last 30 days.
-
-### Database locked errors
-Make sure only one instance is writing to the database at a time.
-
-### S3 export errors
-
-**"failed to load AWS config"**
-- Ensure AWS credentials are configured via `~/.aws/credentials` or environment variables
-- Check that `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION` are set
-
-**"invalid S3 URI"**
-- S3 URIs must be in the format `s3://bucket-name/path/to/file.parquet`
-- Ensure the bucket name and key are separated by a `/`
-
-**"failed to upload to S3: AccessDenied"**
-- Verify your AWS credentials have write permissions to the S3 bucket
-- Check the bucket policy and IAM permissions
-
-### S3-compatible service connection issues
-
-**MinIO connection problems:**
-- Always use `-s3-path-style` flag with MinIO
-- Ensure the endpoint URL includes the protocol (https:// or http://)
-- Example: `-s3-endpoint https://minio.example.com:9000 -s3-path-style`
-
-**DigitalOcean Spaces / Cloudflare R2:**
-- These services typically don't require `-s3-path-style`
-- Ensure you're using the correct regional endpoint
-- Credentials should be configured the same way as AWS S3
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- [OpenRouter](https://openrouter.ai/) for the excellent API service
-- [DuckDB](https://duckdb.org/) for the powerful embedded database
-- [openrouter-go](https://github.com/hra42/openrouter-go) for the Go client library
-
-## Related Projects
-
-- [openrouter-go](https://github.com/hra42/openrouter-go) - Go client for OpenRouter API
+-- Query a specific snapshot version
+SELECT * FROM activity AS OF VERSION 42;
+```
 
 ## Development
 
-For developers working on this project, see [CLAUDE.md](CLAUDE.md) for development guidelines, architecture overview, and common tasks.
+### Run Tests
 
-## Support
+```bash
+# All tests
+go test -v
 
-For issues and questions:
-- Open an issue on GitHub
-- Check OpenRouter documentation: https://openrouter.ai/docs
+# With coverage
+go test -v -cover
+
+# With race detection
+go test -v -race
+```
+
+### Build Optimized Binary
+
+```bash
+CGO_ENABLED=1 go build -ldflags="-s -w" -trimpath -o or-analytics
+```
+
+## How It Works
+
+### Incremental Append Pattern
+
+Unlike traditional approaches that rewrite all data daily, OR Analytics uses an efficient incremental pattern:
+
+1. **Query Last Date**: Check `MAX(date)` in DuckLake
+2. **Filter API Results**: Only process records newer than last date
+3. **Append New Data**: Insert only new records (e.g., 1 day vs 42 days)
+4. **Auto-Snapshot**: DuckLake creates new version automatically
+
+**Example:**
+- Day 1: Import 30 days of history → 30 days written
+- Day 2: Import last 30 days, append 1 new day → 1 day written ✅
+- Day 3: Import last 30 days, append 1 new day → 1 day written ✅
+
+### Why DuckLake?
+
+- **No Local Database Needed**: Stateless, runs anywhere
+- **Incremental Writes**: Only new data, no rewrites
+- **Automatic Versioning**: Time travel built-in
+- **S3-Native**: Data lives in cheap object storage
+- **SQL Queries**: Full DuckDB analytics capabilities
+
+## Troubleshooting
+
+### Authentication Errors
+
+If you get 401/403 errors:
+- Ensure you're using a **provisioning key**, not a regular API key
+- Get one at: https://openrouter.ai/settings/provisioning-keys
+
+### Connection Issues
+
+- **PostgreSQL**: Verify catalog host/port and credentials
+- **S3/R2**: Check endpoint URL, bucket name, and access keys
+- **Firewall**: Ensure outbound access to PostgreSQL and S3 endpoints
+
+### No New Data
+
+This is normal if you've already imported today's data. The incremental append will skip duplicates.
+
+## License
+
+MIT
+
+## Contributing
+
+Issues and pull requests welcome at https://github.com/hra42/or-analytics
