@@ -19,59 +19,64 @@ The application tracks API usage, costs, token consumption, and model performanc
 ## Development Commands
 
 ### Running the Application
+
 ```bash
-# Basic run (fetches last 30 days)
+# Basic run (fetches last 30 days, incrementally appends)
 go run main.go
 
 # With specific date filter
 go run main.go -date 2025-10-08
 
-# With custom database path
-go run main.go -db custom.db
+# With custom DuckLake database name
+go run main.go -db my_analytics
 
 # With verbose logging
 go run main.go -verbose
 
-# Export to local Parquet file
-go run main.go -export activity.parquet
+# Custom PostgreSQL catalog
+go run main.go \
+  -pg-host 192.168.2.21 \
+  -pg-port 5432 \
+  -pg-user admin \
+  -pg-dbname or_analytics_catalog
 
-# Export directly to AWS S3
-go run main.go -export s3://bucket/path/file.parquet
-
-# Export to S3-compatible service (MinIO)
-go run main.go -export s3://bucket/file.parquet \
-  -s3-endpoint https://minio.example.com:9000 \
-  -s3-path-style
-
-# Export to DigitalOcean Spaces
-go run main.go -export s3://space/file.parquet \
-  -s3-endpoint https://nyc3.digitaloceanspaces.com
+# Custom S3/R2 endpoint
+go run main.go \
+  -s3-endpoint s3.hra42.com \
+  -s3-bucket my-analytics \
+  -s3-region us-east-1
 ```
+
+**Required Environment Variables:**
+- `OPENROUTER_API_KEY` - OpenRouter provisioning key
+- `PG_PASSWORD` - PostgreSQL catalog password
+- `S3_KEY` - S3/R2 access key ID
+- `S3_SECRET` - S3/R2 secret access key
 
 **Command-line flags:**
 - `-date` - Filter by specific date (YYYY-MM-DD)
-- `-db` - Database path (default: analytics.db)
+- `-db` - DuckLake database name (default: or_analytics)
 - `-verbose` - Enable verbose logging
-- `-export` - Export path (local or s3://)
-- `-s3-endpoint` - Custom S3 endpoint for S3-compatible services
-- `-s3-path-style` - Use path-style URLs (required for MinIO)
 - `-schedule` - Run as scheduler (daily, hourly, now, or cron expression)
 - `-timezone` - Scheduler timezone (default: UTC)
+- `-webhook-url` - Webhook URL for notifications
+- `-pg-host`, `-pg-port`, `-pg-user`, `-pg-password`, `-pg-dbname` - PostgreSQL catalog config
+- `-s3-key`, `-s3-secret`, `-s3-endpoint`, `-s3-bucket`, `-s3-region` - S3/R2 config
 
 ### Scheduler Mode
 
 ```bash
-# Run as scheduler (daily at midnight)
+# Run as scheduler (daily at midnight UTC)
 go run main.go -schedule daily
 
-# Scheduler with S3 export
-go run main.go -schedule daily -export s3://bucket/data.parquet
-
-# Custom cron schedule
+# Custom cron schedule (2 AM EST)
 go run main.go -schedule "0 2 * * *" -timezone America/New_York
 
-# Run now then schedule
+# Run now then schedule daily
 go run main.go -schedule now
+
+# With webhook notifications
+go run main.go -schedule daily -webhook-url https://hooks.example.com/analytics
 ```
 
 **Docker scheduler:**
@@ -117,24 +122,52 @@ docker build -t or-analytics .
 
 # Run with Docker
 docker run --rm \
-  -e OPENROUTER_API_KEY=your_key \
-  -v $(pwd)/data:/app/data \
-  or-analytics
-
-# Run with docker-compose
-docker-compose run --rm or-analytics
+  -e OPENROUTER_API_KEY=sk-or-v1-... \
+  -e PG_PASSWORD=... \
+  -e S3_KEY=... \
+  -e S3_SECRET=... \
+  or-analytics -verbose
 
 # Build and run specific platforms
 docker buildx build --platform linux/amd64,linux/arm64 -t or-analytics .
 ```
 
-### Database Queries
-```bash
-# Run example queries
-duckdb analytics.db < queries/01_summary_stats.sql
+### Querying DuckLake Data
 
-# Interactive mode
-duckdb analytics.db
+```bash
+# From DuckDB CLI
+duckdb
+```
+
+```sql
+-- Install extensions
+INSTALL ducklake;
+INSTALL postgres;
+INSTALL httpfs;
+INSTALL aws;
+
+-- Configure credentials
+CREATE SECRET s3_bucket (
+    TYPE S3,
+    KEY_ID 'your-key',
+    SECRET 'your-secret',
+    REGION 'us-east-1',
+    ENDPOINT 's3.hra42.com',
+    USE_SSL true,
+    URL_STYLE 'path'
+);
+
+-- Attach DuckLake database
+ATTACH 'ducklake:postgres:dbname=or_analytics_catalog host=192.168.2.21 port=5432 user=admin password=...'
+AS or_analytics (DATA_PATH 's3://or-analytics');
+
+USE or_analytics;
+
+-- Query data
+SELECT * FROM activity LIMIT 10;
+
+-- Time travel
+SELECT * FROM activity AS OF TIMESTAMP '2025-10-01 00:00:00';
 ```
 
 ## Architecture
@@ -270,40 +303,49 @@ The project uses a **multi-stage build** for optimal image size and security:
 - Based on `debian:trixie-slim` (minimal footprint)
 - Includes ca-certificates, tzdata, and libstdc++6
 - Runs as non-root user (analytics:1000)
-- Database stored in `/app/data` for volume mounting
+- **No local database needed** - all persistence in DuckLake/S3
 - **Note**: Debian Trixie is required for glibc 2.38+ which DuckDB needs at runtime
 
 ### Docker Compose Profiles
+
 Service configurations available:
 
-1. **Default** (`or-analytics`): One-time import, no export
-2. **Scheduler** (`or-analytics-scheduler`): Long-running scheduler (daily at midnight)
-3. **Scheduler-S3** (`or-analytics-scheduler-s3`): Scheduler with S3 export
-4. **Scheduled** (`or-analytics-scheduled`): Legacy one-time S3 export
-5. **MinIO** (`or-analytics-minio`): MinIO-compatible storage
+1. **Scheduler** (`or-analytics-scheduler`): Long-running scheduler (daily at midnight)
 
-Use profiles with: `docker-compose --profile <name> up -d <service>` (for schedulers) or `docker-compose --profile <name> run --rm <service>` (for one-time runs)
+Use with: `docker-compose --profile scheduler up -d or-analytics-scheduler`
 
 ### Environment Variables
-- `OPENROUTER_API_KEY` - Required for API access
-- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` - For S3 export
-- `DB_PATH` - Database file path (default: `/app/data/analytics.db`)
 
-### Volume Mounts
-- `./data:/app/data` - Persistent database storage
-- `~/.aws:/home/analytics/.aws:ro` - Optional: Host AWS credentials (read-only)
+**Required:**
+- `OPENROUTER_API_KEY` - OpenRouter provisioning key
+- `PG_PASSWORD` - PostgreSQL catalog password
+- `S3_KEY` - S3/R2 access key ID
+- `S3_SECRET` - S3/R2 secret access key
+
+**Optional:**
+- `PG_HOST`, `PG_PORT`, `PG_USER`, `PG_DBNAME` - PostgreSQL catalog config
+- `S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION` - S3/R2 config
+
+### No Volume Mounts Needed
+
+Unlike traditional databases, DuckLake mode requires **no local volumes** - all data is persisted in S3 via DuckLake. The application runs stateless.
 
 ## Common Tasks
 
 **Adding a new field to the schema:**
-1. Update `ActivityRecord` struct in `db.go`
-2. Update `createTable` constant in `db.go`
-3. Update `upsertQuery` constant in `db.go`
-4. Update `ConvertActivityData()` in `processor.go`
-5. Add corresponding tests in `db_test.go`
+1. Update `ActivityRecord` struct in `ducklake.go`
+2. Update the DuckLake table schema (if creating fresh database)
+3. Update `ConvertActivityData()` in `processor.go`
+4. Add corresponding tests in `ducklake_test.go`
 
 **Creating new analysis queries:**
-Add SQL files to `queries/` directory and document in `queries/README.md`.
+Add SQL files to `queries/` directory and document in `queries/README.md`. All queries should use DuckLake connection pattern shown above.
 
 **Modifying API client behavior:**
 The OpenRouter client is imported from `github.com/hra42/openrouter-go` - modifications should be made in that separate repository.
+
+**Migrating from old local database mode:**
+If you have existing data in the old `analytics.db` file:
+1. Set up DuckLake infrastructure (PostgreSQL catalog + S3 bucket)
+2. Export old data: `duckdb analytics.db -c "COPY activity TO 'export.parquet' (FORMAT PARQUET)"`
+3. Import to DuckLake: Connect via DuckDB CLI and run `INSERT INTO activity SELECT * FROM read_parquet('export.parquet')`
