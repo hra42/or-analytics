@@ -76,16 +76,10 @@ const (
 		SELECT MAX(date) as max_date FROM %s.analytics;
 	`
 
-	// Create temporary table for fresh data
-	createTempTable = `
-		CREATE TEMP TABLE IF NOT EXISTS fresh_data AS
-		SELECT * FROM local_activity WHERE 1=0;
-	`
-
 	// Insert new data that doesn't exist in DuckLake yet
 	incrementalInsert = `
 		INSERT INTO %s.analytics
-		SELECT * FROM fresh_data
+		SELECT * FROM local_activity
 		WHERE date > COALESCE((SELECT MAX(date) FROM %s.analytics), '1900-01-01');
 	`
 )

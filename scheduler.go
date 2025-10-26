@@ -116,7 +116,7 @@ func RunScheduler(ctx context.Context, config *SchedulerConfig) error {
 	} else if config.Schedule == "now" {
 		// Run once immediately, then continue with schedule
 		if err := runImportJob(ctx, jobConfig); err != nil {
-			log.Printf("Error running initial job: %v", err)
+			return fmt.Errorf("initial job failed: %w", err)
 		}
 
 		// Then set up daily schedule
