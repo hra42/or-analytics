@@ -4,12 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-OR Analytics is a Go application that fetches activity data from the OpenRouter API and stores it in a DuckDB database for analysis. The application tracks API usage, costs, token consumption, and model performance.
+OR Analytics is a cloud-native Go application that fetches activity data from the OpenRouter API and stores it incrementally in **DuckLake** - a lakehouse format combining data lakes and warehouses. The application uses in-memory DuckDB for processing and persists all data in S3-compatible object storage with automatic versioning and time travel.
+
+The application tracks API usage, costs, token consumption, and model performance with efficient incremental appends (only new data written daily).
 
 **Key Dependencies:**
 - `github.com/hra42/openrouter-go` (v1.0.0) - OpenRouter API client
-- `github.com/marcboeker/go-duckdb` - DuckDB database driver
-- `github.com/aws/aws-sdk-go-v2` - AWS SDK for S3 uploads
+- `github.com/marcboeker/go-duckdb` - DuckDB database driver with DuckLake extensions
 - `github.com/go-co-op/gocron/v2` - Scheduler library
 - Go 1.25.1+
 
@@ -179,13 +180,15 @@ CREATE TABLE activity (
 
 ### Key Design Patterns
 
-**Batch Processing**: Records are inserted in batches of 100 using transactions for performance and consistency (see `main.go:92-109`).
+**In-Memory Processing**: Application uses in-memory DuckDB (no local persistence) - stateless and eliminates single point of failure (`ducklake.go:69-74`).
 
-**Upsert Logic**: All inserts use `ON CONFLICT DO UPDATE` to prevent duplicates and allow re-running without data duplication (see `db.go:24-39`).
+**Incremental Append**: Only inserts records with dates newer than `MAX(date)` from DuckLake - prevents rewriting 42 days of data daily (`ducklake.go:91-95`, `main.go:183-191`).
 
-**NULL Handling**: Summary queries use `sql.NullFloat64` to handle empty tables correctly (see `db.go:141-178`).
+**Automatic Snapshots**: DuckLake creates a new version/snapshot with each INSERT - enables time travel queries without additional code.
 
-**Date Normalization**: Dates are truncated to YYYY-MM-DD format to ensure consistent storage (see `processor.go:8-14`).
+**NULL Handling**: Summary queries use `sql.NullFloat64` to handle empty tables correctly (`ducklake.go:250-270`).
+
+**Date Normalization**: Dates are truncated to YYYY-MM-DD format to ensure consistent storage (`processor.go:8-14`).
 
 ## CI/CD
 
