@@ -72,7 +72,7 @@ func GetDatabaseMetrics(db *sql.DB) (*WebhookPayload, error) {
 
 	// Get total requests and usage
 	var requests, usage sql.NullFloat64
-	err = db.QueryRow("SELECT COALESCE(SUM(requests), 0), COALESCE(SUM(usage), 0) FROM analytics").Scan(&requests, &usage)
+	err = db.QueryRow("SELECT COALESCE(SUM(requests), 0), COALESCE(SUM(byok_usage_inference), 0) FROM analytics").Scan(&requests, &usage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get totals: %w", err)
 	}
