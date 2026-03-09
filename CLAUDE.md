@@ -35,14 +35,14 @@ go run main.go -verbose
 
 # Custom PostgreSQL catalog
 go run main.go \
-  -pg-host 192.168.2.21 \
+  -pg-host your-pg-host \
   -pg-port 5432 \
   -pg-user admin \
   -pg-dbname or_analytics_catalog
 
 # Custom S3/R2 endpoint
 go run main.go \
-  -s3-endpoint s3.hra42.com \
+  -s3-endpoint s3.example.com \
   -s3-bucket my-analytics \
   -s3-region us-east-1
 ```
@@ -152,13 +152,13 @@ CREATE SECRET s3_bucket (
     KEY_ID 'your-key',
     SECRET 'your-secret',
     REGION 'us-east-1',
-    ENDPOINT 's3.hra42.com',
+    ENDPOINT 's3.example.com',
     USE_SSL true,
     URL_STYLE 'path'
 );
 
 -- Attach DuckLake database
-ATTACH 'ducklake:postgres:dbname=or_analytics_catalog host=192.168.2.21 port=5432 user=admin password=...'
+ATTACH 'ducklake:postgres:dbname=or_analytics_catalog host=localhost port=5432 user=admin password=...'
 AS or_analytics (DATA_PATH 's3://or-analytics');
 
 USE or_analytics;
