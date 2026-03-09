@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: registry.hra42.com/or-analytics:latest
+    image: or-analytics:latest
     container_name: or-analytics-scheduler-minio
     environment:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
@@ -24,12 +24,12 @@ services:
       - "-export"
       - "s3://backup/analytics/analytics.parquet"
       - "-s3-endpoint"
-      - "https://s3.hra42.com"
+      - "${S3_ENDPOINT:-http://minio:9000}"
       - "-s3-path-style"
       - "-timezone"
       - "Europe/Berlin"
       - "-webhook-url"
-      - "https://n8n.hra42.com/webhook/or-analytics"
+      - "${WEBHOOK_URL}"
       - "-verbose"
     restart: unless-stopped
 

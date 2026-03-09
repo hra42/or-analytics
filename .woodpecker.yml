@@ -64,7 +64,8 @@ steps:
   docker-build-push-main:
     image: woodpeckerci/plugin-docker-buildx
     settings:
-      repo: registry.hra42.com/or-analytics
+      repo:
+        from_secret: docker_repo
       dockerfile: Dockerfile
       platforms: linux/amd64,linux/arm64
       tags:
@@ -80,7 +81,8 @@ steps:
   docker-build-push-tag:
     image: woodpeckerci/plugin-docker-buildx
     settings:
-      repo: registry.hra42.com/or-analytics
+      repo:
+        from_secret: docker_repo
       dockerfile: Dockerfile
       platforms: linux/amd64,linux/arm64
       tags:
