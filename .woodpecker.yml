@@ -6,7 +6,7 @@ when:
 
 steps:
   test:
-    image: registry.hra42.com/golang:1.25.1
+    image: registry.hra42.com/golang:1.26
     environment:
       GOPROXY: https://go.hra42.com
       GOSUMDB: sum.golang.org
@@ -16,7 +16,7 @@ steps:
       - go vet ./...
 
   build-amd64:
-    image: registry.hra42.com/golang:1.25.1
+    image: registry.hra42.com/golang:1.26
     environment:
       GOPROXY: https://go.hra42.com
       GOSUMDB: sum.golang.org
@@ -27,7 +27,7 @@ steps:
       - event: [push, manual, tag]
 
   build-arm64:
-    image: registry.hra42.com/golang:1.25.1
+    image: registry.hra42.com/golang:1.26
     environment:
       GOPROXY: https://go.hra42.com
       GOSUMDB: sum.golang.org
