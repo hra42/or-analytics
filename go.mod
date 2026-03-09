@@ -1,11 +1,11 @@
 module github.com/hra42/or-analytics
 
-go 1.25.1
+go 1.26
 
 require (
 	github.com/duckdb/duckdb-go/v2 v2.5.0
 	github.com/go-co-op/gocron/v2 v2.17.0
-	github.com/hra42/openrouter-go v1.0.0
+	github.com/hra42/openrouter-go v1.5.2
 )
 
 require (
