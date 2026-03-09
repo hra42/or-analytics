@@ -20,8 +20,8 @@ github.com/duckdb/duckdb-go-bindings/lib/windows-amd64 v0.3.3 h1:SK2sunA/MPb2T31
 github.com/duckdb/duckdb-go-bindings/lib/windows-amd64 v0.3.3/go.mod h1:K25pJL26ARblGDeuAkrdblFvUen92+CwksLtPEHRqqQ=
 github.com/duckdb/duckdb-go/v2 v2.5.5 h1:TlK8ipnzoKW2aNrjGqRkFWLCDpJDxR/VwH8ezEcvVhw=
 github.com/duckdb/duckdb-go/v2 v2.5.5/go.mod h1:6uIbC3gz36NCEygECzboygOo/Z9TeVwox/puG+ohWV0=
-github.com/go-co-op/gocron/v2 v2.17.0 h1:e/oj6fcAM8vOOKZxv2Cgfmjo+s8AXC46po5ZPtaSea4=
-github.com/go-co-op/gocron/v2 v2.17.0/go.mod h1:Zii6he+Zfgy5W9B+JKk/KwejFOW0kZTFvHtwIpR4aBI=
+github.com/go-co-op/gocron/v2 v2.19.1 h1:B4iLeA0NB/2iO3EKQ7NfKn5KsQgZfjb2fkvoZJU3yBI=
+github.com/go-co-op/gocron/v2 v2.19.1/go.mod h1:5lEiCKk1oVJV39Zg7/YG10OnaVrDAV5GGR6O0663k6U=
 github.com/go-viper/mapstructure/v2 v2.5.0 h1:vM5IJoUAy3d7zRSVtIwQgBj7BiWtMPfmPEgAXnvj1Ro=
 github.com/go-viper/mapstructure/v2 v2.5.0/go.mod h1:oJDH3BJKyqBA2TXFhDsKDGDTlndYOZ6rGS0BRZIxGhM=
 github.com/goccy/go-json v0.10.5 h1:Fq85nIqj+gXn/S5ahsiTlK3TmC85qgirsdTP/+DeaC4=
