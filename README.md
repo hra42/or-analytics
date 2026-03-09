@@ -280,7 +280,7 @@ This is normal if you've already imported today's data. The incremental append w
 
 ## License
 
-MIT
+[Unlicense](LICENSE) — public domain
 
 ## Contributing
 
