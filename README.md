@@ -26,7 +26,7 @@ OpenRouter API → DuckDB (in-memory) → DuckLake → PostgreSQL Catalog + S3/R
 
 ## Prerequisites
 
-- Go 1.25.1+
+- Go 1.26+
 - OpenRouter **provisioning key** (not regular API key): https://openrouter.ai/settings/provisioning-keys
 - PostgreSQL instance for DuckLake catalog
 - S3-compatible object storage (AWS S3, Cloudflare R2, MinIO, etc.)
