@@ -25,14 +25,14 @@ func main() {
 
 	// DuckLake configuration
 	duckLakeDB := flag.String("db", "or_analytics", "DuckLake database name")
-	pgHost := flag.String("pg-host", "192.168.2.21", "PostgreSQL catalog host")
+	pgHost := flag.String("pg-host", "localhost", "PostgreSQL catalog host")
 	pgPort := flag.String("pg-port", "5432", "PostgreSQL catalog port")
 	pgUser := flag.String("pg-user", "admin", "PostgreSQL catalog user")
 	pgPassword := flag.String("pg-password", "", "PostgreSQL catalog password (or use PG_PASSWORD env var)")
 	pgDBName := flag.String("pg-dbname", "or_analytics_catalog", "PostgreSQL catalog database name")
 	s3Key := flag.String("s3-key", "", "S3/R2 access key ID (or use S3_KEY env var)")
 	s3Secret := flag.String("s3-secret", "", "S3/R2 secret access key (or use S3_SECRET env var)")
-	s3Endpoint := flag.String("s3-endpoint", "s3.hra42.com", "S3/R2 endpoint URL")
+	s3Endpoint := flag.String("s3-endpoint", "", "S3/R2 endpoint URL")
 	s3Bucket := flag.String("s3-bucket", "or-analytics", "S3/R2 bucket name")
 	s3Region := flag.String("s3-region", "us-east-1", "S3/R2 region")
 

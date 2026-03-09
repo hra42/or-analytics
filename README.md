@@ -26,7 +26,7 @@ OpenRouter API → DuckDB (in-memory) → DuckLake → PostgreSQL Catalog + S3/R
 
 ## Prerequisites
 
-- Go 1.25.1+
+- Go 1.26+
 - OpenRouter **provisioning key** (not regular API key): https://openrouter.ai/settings/provisioning-keys
 - PostgreSQL instance for DuckLake catalog
 - S3-compatible object storage (AWS S3, Cloudflare R2, MinIO, etc.)
@@ -73,9 +73,9 @@ go run main.go
 # With custom configuration
 go run main.go \
   -db my_analytics \
-  -pg-host 192.168.2.21 \
+  -pg-host your-pg-host \
   -pg-port 5432 \
-  -s3-endpoint s3.hra42.com \
+  -s3-endpoint s3.example.com \
   -s3-bucket my-analytics \
   -verbose
 ```
@@ -105,13 +105,13 @@ go run main.go -schedule daily -webhook-url https://hooks.example.com/analytics
 
 ### Database & Catalog
 - `-db` - DuckLake database name (default: `or_analytics`)
-- `-pg-host` - PostgreSQL host (default: `192.168.2.21`)
+- `-pg-host` - PostgreSQL host (default: `localhost`)
 - `-pg-port` - PostgreSQL port (default: `5432`)
 - `-pg-user` - PostgreSQL user (default: `admin`)
 - `-pg-dbname` - PostgreSQL catalog database (default: `or_analytics_catalog`)
 
 ### S3 Storage
-- `-s3-endpoint` - S3/R2 endpoint URL (default: `s3.hra42.com`)
+- `-s3-endpoint` - S3/R2 endpoint URL
 - `-s3-bucket` - S3/R2 bucket name (default: `or-analytics`)
 - `-s3-region` - S3/R2 region (default: `us-east-1`)
 
@@ -180,13 +180,13 @@ CREATE SECRET s3_bucket (
     KEY_ID 'your-key',
     SECRET 'your-secret',
     REGION 'us-east-1',
-    ENDPOINT 's3.hra42.com',
+    ENDPOINT 's3.example.com',
     USE_SSL true,
     URL_STYLE 'path'
 );
 
 -- Attach database
-ATTACH 'ducklake:postgres:dbname=or_analytics_catalog host=192.168.2.21 port=5432 user=admin password=...'
+ATTACH 'ducklake:postgres:dbname=or_analytics_catalog host=localhost port=5432 user=admin password=...'
 AS or_analytics (DATA_PATH 's3://or-analytics');
 
 USE or_analytics;
@@ -280,7 +280,7 @@ This is normal if you've already imported today's data. The incremental append w
 
 ## License
 
-MIT
+[Unlicense](LICENSE) — public domain
 
 ## Contributing
 

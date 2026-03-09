@@ -35,11 +35,11 @@ type ActivityRecord struct {
 // DuckLakeConfig holds configuration for DuckLake integration
 type DuckLakeConfig struct {
 	Enabled         bool   // Enable DuckLake mode
-	PostgresConnStr string // PostgreSQL connection string (e.g., "dbname=catalog host=192.168.2.21 port=5432 user=admin password=...")
+	PostgresConnStr string // PostgreSQL connection string (e.g., "dbname=catalog host=localhost port=5432 user=admin password=...")
 	DatabaseName    string // DuckLake database name (e.g., "or_analytics")
 	S3AccessKey     string // S3/R2 access key ID
 	S3SecretKey     string // S3/R2 secret access key
-	S3Endpoint      string // S3/R2 endpoint URL (e.g., "s3.hra42.com")
+	S3Endpoint      string // S3/R2 endpoint URL (e.g., "s3.example.com")
 	S3Bucket        string // S3/R2 bucket name (e.g., "or-analytics")
 	S3Region        string // S3/R2 region (default: "us-east-1")
 }

@@ -6,9 +6,9 @@ when:
 
 steps:
   test:
-    image: registry.hra42.com/golang:1.25.1
+    image: golang:1.26
     environment:
-      GOPROXY: https://go.hra42.com
+      GOPROXY: https://proxy.golang.org
       GOSUMDB: sum.golang.org
     commands:
       - go mod download
@@ -16,9 +16,9 @@ steps:
       - go vet ./...
 
   build-amd64:
-    image: registry.hra42.com/golang:1.25.1
+    image: golang:1.26
     environment:
-      GOPROXY: https://go.hra42.com
+      GOPROXY: https://proxy.golang.org
       GOSUMDB: sum.golang.org
     commands:
       - apt-get update && apt-get install -y gcc
@@ -27,9 +27,9 @@ steps:
       - event: [push, manual, tag]
 
   build-arm64:
-    image: registry.hra42.com/golang:1.25.1
+    image: golang:1.26
     environment:
-      GOPROXY: https://go.hra42.com
+      GOPROXY: https://proxy.golang.org
       GOSUMDB: sum.golang.org
     commands:
       - apt-get update && apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
@@ -64,7 +64,8 @@ steps:
   docker-build-push-main:
     image: woodpeckerci/plugin-docker-buildx
     settings:
-      repo: registry.hra42.com/or-analytics
+      repo:
+        from_secret: docker_repo
       dockerfile: Dockerfile
       platforms: linux/amd64,linux/arm64
       tags:
@@ -80,7 +81,8 @@ steps:
   docker-build-push-tag:
     image: woodpeckerci/plugin-docker-buildx
     settings:
-      repo: registry.hra42.com/or-analytics
+      repo:
+        from_secret: docker_repo
       dockerfile: Dockerfile
       platforms: linux/amd64,linux/arm64
       tags:

@@ -12,7 +12,7 @@ The application tracks API usage, costs, token consumption, and model performanc
 - `github.com/hra42/openrouter-go` (v1.0.0) - OpenRouter API client
 - `github.com/duckdb/duckdb-go/v2` (v2.5.0) - Official DuckDB database driver with DuckLake extensions
 - `github.com/go-co-op/gocron/v2` (v2.17.0) - Scheduler library
-- Go 1.25.1+
+- Go 1.26+
 
 **Important:** This application requires an OpenRouter **provisioning key** (not a regular API key) from https://openrouter.ai/settings/provisioning-keys. Set it via `OPENROUTER_API_KEY` environment variable.
 
@@ -35,14 +35,14 @@ go run main.go -verbose
 
 # Custom PostgreSQL catalog
 go run main.go \
-  -pg-host 192.168.2.21 \
+  -pg-host your-pg-host \
   -pg-port 5432 \
   -pg-user admin \
   -pg-dbname or_analytics_catalog
 
 # Custom S3/R2 endpoint
 go run main.go \
-  -s3-endpoint s3.hra42.com \
+  -s3-endpoint s3.example.com \
   -s3-bucket my-analytics \
   -s3-region us-east-1
 ```
@@ -152,13 +152,13 @@ CREATE SECRET s3_bucket (
     KEY_ID 'your-key',
     SECRET 'your-secret',
     REGION 'us-east-1',
-    ENDPOINT 's3.hra42.com',
+    ENDPOINT 's3.example.com',
     USE_SSL true,
     URL_STYLE 'path'
 );
 
 -- Attach DuckLake database
-ATTACH 'ducklake:postgres:dbname=or_analytics_catalog host=192.168.2.21 port=5432 user=admin password=...'
+ATTACH 'ducklake:postgres:dbname=or_analytics_catalog host=localhost port=5432 user=admin password=...'
 AS or_analytics (DATA_PATH 's3://or-analytics');
 
 USE or_analytics;
@@ -300,7 +300,7 @@ The application supports any S3-compatible object storage service:
 The project uses a **multi-stage build** for optimal image size and security:
 
 **Stage 1: Builder**
-- Based on `golang:1.25.1` (Debian-based)
+- Based on `golang:1.26` (Debian-based)
 - Installs build dependencies (gcc for CGO)
 - Compiles with optimizations (`-ldflags="-s -w" -trimpath`)
 - CGO_ENABLED=1 required for DuckDB
