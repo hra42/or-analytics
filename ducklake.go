@@ -190,7 +190,7 @@ func AppendToDuckLake(db *sql.DB, dbName string, records []ActivityRecord) (int,
 			date, model, provider_name, requests, usage,
 			prompt_tokens, completion_tokens, reasoning_tokens, byok_usage_inference
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (CAST(? AS DATE), ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	stmt, err := tx.Prepare(insertLocal)
