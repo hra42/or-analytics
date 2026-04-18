@@ -5,7 +5,7 @@ go 1.26
 require (
 	github.com/duckdb/duckdb-go/v2 v2.10501.0
 	github.com/go-co-op/gocron/v2 v2.20.0
-	github.com/hra42/openrouter-go v1.5.2
+	github.com/hra42/openrouter-go v1.6.0
 )
 
 require (
